@@ -1,11 +1,12 @@
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import './app/global.css';
+import SplashScreenLoader from './src/components/SplashScreenLoader';
 
 import { initAudio, skipNext, skipPrevious, startStoreSubscription, togglePlayPause } from './src/audio/audioManager';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -19,6 +20,7 @@ export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 export default function App() {
   const { colors, isDark } = useThemeStore();
+  const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
     initAudio();
@@ -62,6 +64,7 @@ export default function App() {
 
   return (
     <GestureHandlerRootView className="flex-1" style={{ flex: 1, backgroundColor: colors.background }}>
+      {!splashDone && <SplashScreenLoader onComplete={() => setSplashDone(true)} />}
       <SafeAreaProvider>
         <NavigationContainer
           ref={navigationRef}
