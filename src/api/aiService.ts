@@ -1,26 +1,19 @@
 import { getCached, setCached, TTL } from '../utils/cache';
 
-const GEMINI_API_KEY = 'AIzaSyDwmHUf3T5RC0-ps4_PRYMQNeuiPg2ISDQ';
-const AICC_API_KEY = 'sk-OaVqW4vYpSjmcQtusAe1h19lOcBbDgFamC3vLOpkShrankmy';
-const AICC_URL = 'https://api.ai.cc/v1/chat/completions'; // Replace with your actual Gemini key
+// EXPO_PUBLIC_ prefix is required for Expo to expose these vars to the JS bundle
+// Priority: AICC (Claude Haiku 4.5) → Gemini → hardcoded fallback
+const AICC_API_KEY = process.env.EXPO_PUBLIC_AICC_API_KEY || '';
+const AICC_URL =
+  process.env.EXPO_PUBLIC_AICC_URL || 'https://api.ai.cc/v1/chat/completions';
+const CLAUDE_MODEL = 'claude-haiku-4-5';
+
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+const GEMINI_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
-}
-
-// Gemini uses 'user' and 'model' roles
-interface GeminiContent {
-  role: 'user' | 'model';
-  parts: { text: string }[];
-}
-
-interface GeminiResponse {
-  candidates?: {
-    content: {
-      parts: { text: string }[];
-    };
-  }[];
 }
 
 const SYSTEM_PROMPT = `You are Lokal AI, an intelligent music assistant inside the Lokal music player app.
@@ -198,11 +191,56 @@ function getHardcodedFallback(userMessage: string): string {
   return DEFAULT_FALLBACK;
 }
 
-/** Secondary AI fallback using api.ai.cc (OpenAI-compatible) */
-async function askFallbackAI(
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Tier 2: Gemini fallback when AICC is unavailable */
+async function askGeminiFallback(
   userMessage: string,
   conversationHistory: ChatMessage[] = [],
 ): Promise<string | null> {
+  if (!GEMINI_API_KEY) return null;
+  try {
+    const contents = [
+      ...conversationHistory
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        })),
+      { role: 'user', parts: [{ text: userMessage }] },
+    ];
+
+    const response = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-goog-api-key': GEMINI_API_KEY },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents,
+        generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('Gemini fallback error:', response.status, err);
+      return null;
+    }
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    return text && text.length > 2 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Primary AI: AICC (Claude Haiku 4.5) → Gemini → hardcoded fallback
+ */
+export async function askAI(
+  userMessage: string,
+  conversationHistory: ChatMessage[] = [],
+): Promise<string> {
+  // ── Tier 1: AICC / Claude Haiku 4.5 ──────────────────────────────────────
   try {
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -214,88 +252,27 @@ async function askFallbackAI(
 
     const response = await fetch(AICC_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${AICC_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages,
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AICC_API_KEY}` },
+      body: JSON.stringify({ model: CLAUDE_MODEL, messages, max_tokens: 500, temperature: 0.7 }),
     });
 
-    if (!response.ok) return null;
-    const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content?.trim();
-    return text && text.length > 2 ? text : null;
-  } catch {
-    return null;
-  }
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
-function toGeminiContents(
-  conversationHistory: ChatMessage[],
-  userMessage: string,
-): GeminiContent[] {
-  const contents: GeminiContent[] = [];
-
-  for (const msg of conversationHistory) {
-    if (msg.role === 'system') continue; // system handled via systemInstruction
-    contents.push({
-      role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }],
-    });
-  }
-
-  contents.push({ role: 'user', parts: [{ text: userMessage }] });
-  return contents;
-}
-
-export async function askAI(
-  userMessage: string,
-  conversationHistory: ChatMessage[] = [],
-): Promise<string> {
-  try {
-    const contents = toGeminiContents(conversationHistory, userMessage);
-
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents,
-        generationConfig: {
-          maxOutputTokens: 500,
-          temperature: 0.7,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API error:', response.status, errorText);
-      // Try secondary AI
-      const fallback = await askFallbackAI(userMessage, conversationHistory);
-      return fallback ?? getHardcodedFallback(userMessage);
+    if (response.ok) {
+      const data = await response.json();
+      const text = data?.choices?.[0]?.message?.content?.trim();
+      if (text && text.length > 2) return text;
+    } else {
+      console.error('AICC API error:', response.status, await response.text());
     }
-
-    const data: GeminiResponse = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    return text || getHardcodedFallback(userMessage);
   } catch (error) {
-    console.error('AI service error:', error);
-    // Try secondary AI before hardcoded fallback
-    const fallback = await askFallbackAI(userMessage, conversationHistory);
-    return fallback ?? getHardcodedFallback(userMessage);
+    console.error('AICC request failed:', error);
   }
+
+  // ── Tier 2: Gemini fallback ───────────────────────────────────────────────
+  const geminiResult = await askGeminiFallback(userMessage, conversationHistory);
+  if (geminiResult) return geminiResult;
+
+  // ── Tier 3: hardcoded keyword fallback ───────────────────────────────────
+  return getHardcodedFallback(userMessage);
 }
 
 /**

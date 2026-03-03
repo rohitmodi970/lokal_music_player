@@ -28,14 +28,6 @@
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_AUDIO",
-        "android.permission.WRITE_SETTINGS",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.ACCESS_MEDIA_LOCATION",
-        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO"
       ],
       "package": "com.rohitmodi970ss.lokal_Music_Player"
@@ -71,6 +63,11 @@
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "90135ff8-1c15-4f99-9296-fc53da1e176a"
+      }
     }
   }
 }

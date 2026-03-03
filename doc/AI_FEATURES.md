@@ -29,16 +29,16 @@ User action / app event
 
 All AI calls go through `src/api/aiService.ts`. The active call chain is:
 
-1. `askAI(prompt, history)` — tries Gemini first
-2. On Gemini failure → `askFallbackAI(prompt)` — calls `api.ai.cc` with `gpt-4o-mini`
-3. On both failures → `getHardcodedFallback(userMessage)` — keyword-based instant response
+1. `askAI(prompt, history)` — calls AICC proxy with **Claude Haiku 4.5**
+2. On API failure → `getHardcodedFallback(userMessage)` — keyword-based instant response
 
-**API keys (in `aiService.ts`):**
-| Constant | Value | Model |
-|----------|-------|-------|
-| `GEMINI_API_KEY` | Google AI Studio key | `gemini-flash-latest` |
-| `AICC_API_KEY` | api.ai.cc token | `gpt-4o-mini` |
-| `AICC_URL` | `https://api.ai.cc/v1/chat/completions` | OpenAI-compatible |
+**Environment variables (in `.env`):**
+| Variable | Model |
+|----------|-------|
+| `EXPO_PUBLIC_AICC_API_KEY` | Claude Haiku 4.5 via `api.ai.cc` |
+| `EXPO_PUBLIC_AICC_URL` | `https://api.ai.cc/v1/chat/completions` |
+
+> **Note:** `EXPO_PUBLIC_` prefix is required. Expo only exposes variables with this prefix to the JS bundle.
 
 ---
 
@@ -68,14 +68,14 @@ All AI calls go through `src/api/aiService.ts`. The active call chain is:
 2. Cache hit → songs rendered instantly, no spinner; background refresh runs silently
 3. Cache miss → shows spinner, fetches fresh, cache is populated for next open
 
-**Fallback chain:** Static string → Gemini → api.ai.cc → `"top hits"`
+**Fallback chain:** Static string → Claude Haiku 4.5 (AICC) → `"top hits"`
 
 ---
 
 ### 2. Smart Queue Suggestions
 **File:** `src/api/aiService.ts` — `getSmartQueueSuggestions(songName, artistName)`  
 **Trigger:** Can be called after a song finishes or from the "You may also like" feature (hook it wherever you want auto-play next)  
-**What it does:** Given the currently playing song + artist, asks Gemini to suggest 3 similar songs. Returns raw search query strings to pass into `searchSongs()`.
+**What it does:** Given the currently playing song + artist, asks Claude Haiku 4.5 to suggest 3 similar songs. Returns raw search query strings to pass into `searchSongs()`.
 
 **Example prompt:**
 ```
@@ -157,29 +157,29 @@ const result = await searchSongs(query, 1, 30);
 | Temperature | 0.7 | Balanced creativity vs. consistency |
 | System prompt | `SYSTEM_PROMPT` const | Scopes the model to music topics |
 
-### Tier 2 — api.ai.cc (gpt-4o-mini)
+### Tier 1 — AICC / Claude Haiku 4.5 (Primary)
 | Setting | Value | Notes |
 |---------|-------|-------|
-| Model | `gpt-4o-mini` | OpenAI-compatible, low-cost |
-| Endpoint | `https://api.ai.cc/v1/chat/completions` | Drop-in OpenAI API replacement |
-| Max tokens | 500 | Same cap as Gemini |
-| Temperature | 0.7 | Same as Gemini for consistency |
+| Model | `claude-haiku-4-5` | Fast, cost-efficient Claude model |
+| Endpoint | `https://api.ai.cc/v1/chat/completions` | OpenAI-compatible proxy |
+| Max tokens | 500 | Keeps responses concise |
+| Temperature | 0.7 | Balanced creativity |
+| Auth | `Bearer EXPO_PUBLIC_AICC_API_KEY` | Set in `.env` |
 
-### Tier 3 — Hardcoded Keyword Fallback
+### Tier 2 — Hardcoded Keyword Fallback
 Matches keywords in the user's message against 12 categories:  
 `chill`, `workout`, `romantic`, `sad`, `party`, `road trip`, `morning`, `night`, `bollywood`, `trending`, `punjabi`, `focus`  
 Each category returns a fixed list of songs in `"Song Name" by Artist` format, which `extractSongNames()` can parse for JioSaavn searching.
 
 **Key location:** `src/api/aiService.ts`  
-**Gemini key:** Replace `GEMINI_API_KEY` — get from [Google AI Studio](https://aistudio.google.com/)  
-**api.ai.cc key:** Replace `AICC_API_KEY` — get from [api.ai.cc console](https://api.ai.cc/console/token)
+**api.ai.cc key:** Set `EXPO_PUBLIC_AICC_API_KEY` in `.env` — get from [api.ai.cc console](https://api.ai.cc/console/token)
 
 ---
 
 ## Adding New AI Features
 
 1. Add a new async function in `src/api/aiService.ts` that calls `askAI(prompt, history)`
-2. `askAI` already handles the full three-tier fallback — you get Gemini → api.ai.cc → hardcoded automatically
+2. `askAI` already handles the two-tier fallback — you get Claude Haiku 4.5 (AICC) → hardcoded automatically
 3. Keep prompts precise and request structured output (one item per line, specific format)
 4. Cache the result where appropriate using `setCached(key, data, TTL.LONG)` from `src/utils/cache.ts`
 5. Always add a `try/catch` with a sensible static fallback so LLM failures never block the UI

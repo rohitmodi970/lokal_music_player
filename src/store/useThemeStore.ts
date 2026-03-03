@@ -99,9 +99,9 @@ interface ThemeState {
 }
 
 const useThemeStore = create<ThemeState>((set, get) => ({
-  mode: 'light',
-  colors: LIGHT,
-  isDark: false,
+  mode: 'dark',
+  colors: DARK,
+  isDark: true,
 
   toggleTheme: () => {
     const newMode = get().mode === 'light' ? 'dark' : 'light';
