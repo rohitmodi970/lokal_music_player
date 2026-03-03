@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getDynamicHomeQuery } from '../api/aiService';
+import { askAI, getDynamicHomeQuery } from '../api/aiService';
 import { searchSongs } from '../api/saavnApi';
 import { loadAndPlay } from '../audio/audioManager';
 import MiniPlayer from '../components/MiniPlayer';
@@ -26,7 +26,7 @@ import SongOptionsModal from '../components/SongOptionsModal';
 import usePlayerStore from '../store/usePlayerStore';
 import useThemeStore from '../store/useThemeStore';
 import { HomeTabType, RootStackParamList, Song, SongImage } from '../types';
-import { getCached } from '../utils/cache';
+import { getCached, setCached, TTL } from '../utils/cache';
 import { getArtistName, getImageUrl } from '../utils/helpers';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -34,6 +34,26 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 60) / 2.4;
 const ARTIST_CARD_WIDTH = (SCREEN_WIDTH - 60) / 2.8;
+const MOOD_CHIP_COLORS = ['#E8364F', '#1DB954', '#8B5CF6', '#F97316', '#06B6D4', '#EC4899', '#EAB308', '#3B82F6'];
+
+// Quick mood/genre chips for the Suggested tab
+const MOOD_CHIPS: { label: string; emoji: string; query: string }[] = [
+  { label: 'Trending', emoji: '🔥', query: 'trending viral 2025' },
+  { label: 'Chill', emoji: '☕', query: 'chill lofi Hindi' },
+  { label: 'Party', emoji: '🎉', query: 'party dance hits' },
+  { label: 'Romantic', emoji: '💕', query: 'romantic love songs Hindi' },
+  { label: 'Sad', emoji: '🥺', query: 'sad heartbreak songs' },
+  { label: 'Punjabi', emoji: '🕺', query: 'punjabi hits 2024 2025' },
+  { label: 'Rap', emoji: '🎤', query: 'Indian hip hop rap' },
+  { label: 'Workout', emoji: '💪', query: 'gym workout pump' },
+];
+
+// Top artists to feature — well-known names fetched via search
+const TOP_ARTIST_QUERIES = [
+  'Arijit Singh', 'Diljit Dosanjh', 'AP Dhillon', 'King',
+  'Karan Aujla', 'Shreya Ghoshal', 'Anuv Jain', 'Badshah',
+  'Shubh', 'Vishal Mishra', 'Pritam', 'Darshan Raval',
+];
 
 const TABS: HomeTabType[] = ['Suggested', 'Songs', 'Albums', 'Artists', 'Local'];
 
@@ -83,11 +103,22 @@ export default function HomeScreen() {
   const [localPermission, setLocalPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   // AI query hint label
   const [aiQueryHint, setAiQueryHint] = useState<string>('');
+  // Trending songs
+  const [trendingSongs, setTrendingSongs] = useState<Song[]>([]);
+  const [trendingLoading, setTrendingLoading] = useState(false);
+  // Top artists (fetched via search)
+  const [topArtists, setTopArtists] = useState<ArtistInfo[]>([]);
+  // Mood chip results
+  const [moodSongs, setMoodSongs] = useState<Song[]>([]);
+  const [activeMood, setActiveMood] = useState<string | null>(null);
+  const [moodLoading, setMoodLoading] = useState(false);
 
   const hasCurrentSong = queue.length > 0 && currentIndex >= 0;
 
   useEffect(() => {
     loadInitialSongs();
+    loadTrendingSongs();
+    loadTopArtists();
   }, []);
 
   const loadInitialSongs = async (showSpinner = true) => {
@@ -144,6 +175,103 @@ export default function HomeScreen() {
       setIsLoading(false);
     }
   };
+
+  // Load trending songs from a dedicated search
+  const loadTrendingSongs = async () => {
+    setTrendingLoading(true);
+    try {
+      const cached = await getCached<Song[]>('home_trending_songs');
+      if (cached && cached.length > 0) {
+        setTrendingSongs(cached);
+        setTrendingLoading(false);
+        return;
+      }
+
+      // Use AI to pick a trending query, fallback to static
+      let query = 'trending viral 2025 Hindi';
+      try {
+        const aiQuery = await askAI(
+          'Give me ONE short (2-4 word) search query for the most trending/viral Indian songs right now. Reply with ONLY the query.',
+          [],
+        );
+        const cleaned = aiQuery.split('\n')[0].replace(/["'.!]/g, '').trim();
+        if (cleaned.length > 2 && cleaned.length < 40) query = cleaned;
+      } catch { /* use default */ }
+
+      const result = await searchSongs(query, 1, 20);
+      if (result.songs.length > 0) {
+        setTrendingSongs(result.songs);
+        await setCached('home_trending_songs', result.songs, TTL.SHORT);
+      }
+    } catch (e) {
+      console.error('loadTrendingSongs error:', e);
+    } finally {
+      setTrendingLoading(false);
+    }
+  };
+
+  // Load top artists via search queries
+  const loadTopArtists = async () => {
+    try {
+      const cached = await getCached<ArtistInfo[]>('home_top_artists');
+      if (cached && cached.length > 0) {
+        setTopArtists(cached);
+        return;
+      }
+
+      const artistInfos: ArtistInfo[] = [];
+      // Pick 8 random artists from the pool to keep it varied
+      const shuffled = [...TOP_ARTIST_QUERIES].sort(() => 0.5 - Math.random()).slice(0, 8);
+
+      for (const name of shuffled) {
+        try {
+          const result = await searchSongs(name, 1, 5);
+          if (result.songs.length > 0) {
+            const song = result.songs[0];
+            const primary = song.artists?.primary;
+            if (primary?.length) {
+              const artist = primary.find(a => a.name.toLowerCase().includes(name.toLowerCase())) || primary[0];
+              // Deduplicate
+              if (!artistInfos.some(a => a.id === artist.id)) {
+                artistInfos.push({
+                  id: artist.id,
+                  name: artist.name,
+                  image: artist.image,
+                  albumCount: 0,
+                  songCount: result.songs.length,
+                });
+              }
+            }
+          }
+        } catch { /* skip */ }
+      }
+      setTopArtists(artistInfos);
+      if (artistInfos.length > 0) {
+        await setCached('home_top_artists', artistInfos, TTL.MEDIUM);
+      }
+    } catch (e) {
+      console.error('loadTopArtists error:', e);
+    }
+  };
+
+  // Handle mood chip press
+  const handleMoodChip = useCallback(async (chip: typeof MOOD_CHIPS[0]) => {
+    if (activeMood === chip.label) {
+      setActiveMood(null);
+      setMoodSongs([]);
+      return;
+    }
+    setActiveMood(chip.label);
+    setMoodLoading(true);
+    try {
+      const result = await searchSongs(chip.query, 1, 20);
+      setMoodSongs(result.songs);
+    } catch {
+      setMoodSongs([]);
+    } finally {
+      setMoodLoading(false);
+    }
+  }, [activeMood]);
 
   const loadLocalSongs = useCallback(async () => {
     setLocalLoading(true);
@@ -350,98 +478,235 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {/* Recently Played */}
-      <SectionHeader title="Recently Played" onSeeAll={() => setActiveTab('Songs')} />
-      <FlatList
+      {/* Mood Chips */}
+      <ScrollView
         horizontal
-        data={recentlyPlayed}
-        keyExtractor={(item) => `recent-${item.id}`}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.horizontalList}
-        renderItem={({ item }) => {
-          const imageUrl = getImageUrl(item.image, '500x500');
+        contentContainerStyle={styles.moodChipsRow}
+      >
+        {MOOD_CHIPS.map((chip, idx) => {
+          const isActive = activeMood === chip.label;
+          const chipBg = isActive ? colors.primary : MOOD_CHIP_COLORS[idx % MOOD_CHIP_COLORS.length];
           return (
             <TouchableOpacity
-              style={styles.card}
-              onPress={() => handleSongPress(item, recentlyPlayed)}
-              activeOpacity={0.8}
+              key={chip.label}
+              style={[styles.moodChip, { backgroundColor: chipBg, opacity: isActive ? 1 : 0.85 }]}
+              onPress={() => handleMoodChip(chip)}
+              activeOpacity={0.7}
             >
-              {imageUrl ? (
-                <Image source={{ uri: imageUrl }} style={[styles.cardImage, { backgroundColor: colors.surface }]} />
-              ) : (
-                <View style={[styles.cardImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
-                  <Ionicons name="musical-note" size={32} color={colors.textMuted} />
-                </View>
-              )}
-              <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
-                {item.name} - {getArtistName(item)}
-              </Text>
+              <Text style={styles.moodChipEmoji}>{chip.emoji}</Text>
+              <Text style={[styles.moodChipLabel, isActive && { fontWeight: '800' }]}>{chip.label}</Text>
             </TouchableOpacity>
           );
-        }}
-      />
+        })}
+      </ScrollView>
 
-      {/* Artists */}
-      <SectionHeader title="Artists" onSeeAll={() => setActiveTab('Artists')} />
-      <FlatList
-        horizontal
-        data={artists.slice(0, 10)}
-        keyExtractor={(item) => `artist-${item.id}`}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.horizontalList}
-        renderItem={({ item }) => {
-          const imageUrl = item.image ? getImageUrl(item.image, '500x500') : '';
-          return (
-            <TouchableOpacity
-              style={styles.artistCard}
-              onPress={() => handleArtistPress(item)}
-              activeOpacity={0.8}
-            >
-              {imageUrl ? (
-                <Image source={{ uri: imageUrl }} style={[styles.artistCircleImage, { backgroundColor: colors.surface }]} />
-              ) : (
-                <View style={[styles.artistCircleImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
-                  <Ionicons name="person" size={36} color={colors.textMuted} />
+      {/* Active Mood Results */}
+      {activeMood && (
+        <>
+          <SectionHeader title={`${activeMood} Vibes`} onSeeAll={() => {}} />
+          {moodLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 16 }} />
+          ) : (
+            <FlatList
+              horizontal
+              data={moodSongs}
+              keyExtractor={(item) => `mood-${item.id}`}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              renderItem={({ item }) => {
+                const imageUrl = getImageUrl(item.image, '500x500');
+                return (
+                  <TouchableOpacity
+                    style={styles.card}
+                    onPress={() => handleSongPress(item, moodSongs)}
+                    activeOpacity={0.8}
+                  >
+                    {imageUrl ? (
+                      <Image source={{ uri: imageUrl }} style={[styles.cardImage, { backgroundColor: colors.surface }]} />
+                    ) : (
+                      <View style={[styles.cardImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Ionicons name="musical-note" size={32} color={colors.textMuted} />
+                      </View>
+                    )}
+                    <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
+                      {item.name} - {getArtistName(item)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {/* Trending Now */}
+      <SectionHeader title="Trending Now" onSeeAll={() => setActiveTab('Songs')} />
+      {trendingLoading ? (
+        <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 16 }} />
+      ) : (
+        <FlatList
+          horizontal
+          data={trendingSongs.length > 0 ? trendingSongs : songs.slice(0, 15)}
+          keyExtractor={(item) => `trending-${item.id}`}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+          renderItem={({ item }) => {
+            const imageUrl = getImageUrl(item.image, '500x500');
+            return (
+              <TouchableOpacity
+                style={styles.trendingCard}
+                onPress={() => handleSongPress(item, trendingSongs.length > 0 ? trendingSongs : songs.slice(0, 15))}
+                activeOpacity={0.8}
+              >
+                {imageUrl ? (
+                  <Image source={{ uri: imageUrl }} style={[styles.trendingCardImage, { backgroundColor: colors.surface }]} />
+                ) : (
+                  <View style={[styles.trendingCardImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="musical-note" size={28} color={colors.textMuted} />
+                  </View>
+                )}
+                <View style={styles.trendingCardOverlay}>
+                  <Text style={styles.trendingCardTitle} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.trendingCardArtist} numberOfLines={1}>{getArtistName(item)}</Text>
                 </View>
-              )}
-              <Text style={[styles.artistCardName, { color: colors.text }]} numberOfLines={1}>
-                {item.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
+
+      {/* Top Artists */}
+      <SectionHeader title="Top Artists" onSeeAll={() => setActiveTab('Artists')} />
+      {topArtists.length > 0 ? (
+        <FlatList
+          horizontal
+          data={topArtists}
+          keyExtractor={(item) => `topartist-${item.id}`}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+          renderItem={({ item }) => {
+            const imageUrl = item.image ? getImageUrl(item.image, '500x500') : '';
+            return (
+              <TouchableOpacity
+                style={styles.artistCard}
+                onPress={() => handleArtistPress(item)}
+                activeOpacity={0.8}
+              >
+                {imageUrl ? (
+                  <Image source={{ uri: imageUrl }} style={[styles.artistCircleImage, { backgroundColor: colors.surface }]} />
+                ) : (
+                  <View style={[styles.artistCircleImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="person" size={36} color={colors.textMuted} />
+                  </View>
+                )}
+                <Text style={[styles.artistCardName, { color: colors.text }]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      ) : (
+        <FlatList
+          horizontal
+          data={artists.slice(0, 10)}
+          keyExtractor={(item) => `artist-${item.id}`}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+          renderItem={({ item }) => {
+            const imageUrl = item.image ? getImageUrl(item.image, '500x500') : '';
+            return (
+              <TouchableOpacity
+                style={styles.artistCard}
+                onPress={() => handleArtistPress(item)}
+                activeOpacity={0.8}
+              >
+                {imageUrl ? (
+                  <Image source={{ uri: imageUrl }} style={[styles.artistCircleImage, { backgroundColor: colors.surface }]} />
+                ) : (
+                  <View style={[styles.artistCircleImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="person" size={36} color={colors.textMuted} />
+                  </View>
+                )}
+                <Text style={[styles.artistCardName, { color: colors.text }]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
+
+      {/* Recently Played */}
+      {recentlyPlayed.length > 0 && (
+        <>
+          <SectionHeader title="Recently Played" onSeeAll={() => setActiveTab('Songs')} />
+          <FlatList
+            horizontal
+            data={recentlyPlayed}
+            keyExtractor={(item) => `recent-${item.id}`}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+            renderItem={({ item }) => {
+              const imageUrl = getImageUrl(item.image, '500x500');
+              return (
+                <TouchableOpacity
+                  style={styles.card}
+                  onPress={() => handleSongPress(item, recentlyPlayed)}
+                  activeOpacity={0.8}
+                >
+                  {imageUrl ? (
+                    <Image source={{ uri: imageUrl }} style={[styles.cardImage, { backgroundColor: colors.surface }]} />
+                  ) : (
+                    <View style={[styles.cardImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                      <Ionicons name="musical-note" size={32} color={colors.textMuted} />
+                    </View>
+                  )}
+                  <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
+                    {item.name} - {getArtistName(item)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </>
+      )}
 
       {/* Most Played */}
-      <SectionHeader title="Most Played" onSeeAll={() => setActiveTab('Songs')} />
-      <FlatList
-        horizontal
-        data={mostPlayed}
-        keyExtractor={(item) => `most-${item.id}`}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.horizontalList}
-        renderItem={({ item }) => {
-          const imageUrl = getImageUrl(item.image, '500x500');
-          return (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => handleSongPress(item, mostPlayed)}
-              activeOpacity={0.8}
-            >
-              {imageUrl ? (
-                <Image source={{ uri: imageUrl }} style={[styles.cardImage, { backgroundColor: colors.surface }]} />
-              ) : (
-                <View style={[styles.cardImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
-                  <Ionicons name="musical-note" size={32} color={colors.textMuted} />
-                </View>
-              )}
-              <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
-                {item.name} - {getArtistName(item)}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      {mostPlayed.length > 0 && (
+        <>
+          <SectionHeader title="Most Played" onSeeAll={() => setActiveTab('Songs')} />
+          <FlatList
+            horizontal
+            data={mostPlayed}
+            keyExtractor={(item) => `most-${item.id}`}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+            renderItem={({ item }) => {
+              const imageUrl = getImageUrl(item.image, '500x500');
+              return (
+                <TouchableOpacity
+                  style={styles.card}
+                  onPress={() => handleSongPress(item, mostPlayed)}
+                  activeOpacity={0.8}
+                >
+                  {imageUrl ? (
+                    <Image source={{ uri: imageUrl }} style={[styles.cardImage, { backgroundColor: colors.surface }]} />
+                  ) : (
+                    <View style={[styles.cardImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                      <Ionicons name="musical-note" size={32} color={colors.textMuted} />
+                    </View>
+                  )}
+                  <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
+                    {item.name} - {getArtistName(item)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </>
+      )}
 
       {/* Albums */}
       {albums.length > 0 && (
@@ -1011,6 +1276,59 @@ const styles = StyleSheet.create({
   // ===== SUGGESTED TAB =====
   suggestedContainer: {
     paddingBottom: 30,
+  },
+  // Mood chips
+  moodChipsRow: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 4,
+    gap: 10,
+  },
+  moodChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 6,
+  },
+  moodChipEmoji: {
+    fontSize: 16,
+  },
+  moodChipLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  // Trending card (wider with overlay text)
+  trendingCard: {
+    width: CARD_WIDTH + 20,
+    height: CARD_WIDTH + 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  trendingCardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  trendingCardOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  trendingCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  trendingCardArtist: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
