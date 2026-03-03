@@ -38,7 +38,7 @@ All keys use a prefix to avoid collisions.
 | `@lokal_playlists` | `@lokal_` | Array of user-created `Playlist` objects | `useLibraryStore` |
 | `@lokal_history` | `@lokal_` | Array of recently played `Song` objects (max 100) | `useLibraryStore` |
 | `@lokal_recent_searches` | `@lokal_` | Array of recent search strings (max 10) | `SearchScreen` |
-| `@mume_cache_*` | `@mume_cache_` | API response cache entries with TTL metadata | `src/utils/cache.ts` |
+| `@lokal_cache_*` | `@lokal_cache_` | API response cache entries with TTL metadata | `src/utils/cache.ts` |
 
 ---
 
@@ -117,9 +117,9 @@ App start → loadLibrary()
 
 ## 4. API Cache — `src/utils/cache.ts`
 
-**Purpose:** Avoid redundant network requests by caching JioSaavn API responses locally with a TTL.
+**Purpose:** Avoid redundant network requests by caching JioSaavn API responses and LLM-generated queries locally with a TTL.
 
-**Storage key format:** `@mume_cache_<key>`
+**Storage key format:** `@lokal_cache_<key>`
 
 **Cache entry shape:**
 ```typescript
@@ -135,17 +135,18 @@ interface CacheEntry<T> {
 |----------|-------|----------|
 | `TTL.SHORT` | 5 minutes | Trending / home songs |
 | `TTL.MEDIUM` | 15 minutes | Search results, suggestions, artist songs |
-| `TTL.LONG` | 1 hour | Single song by ID |
-| `TTL.DAY` | 24 hours | — (available, not yet used) |
+| `TTL.LONG` | 1 hour | Single song by ID, AI-generated home query per time-period |
+| `TTL.DAY` | 24 hours | Available for long-lived preferences |
 
 **Per-function cache keys:**
-| Function | Key format | TTL |
-|----------|-----------|-----|
-| `searchSongs(q, page, limit)` | `search_<q>_<page>_<limit>` | MEDIUM |
-| `getSongById(id)` | `song_<id>` | LONG |
-| `getSongSuggestions(id)` | `suggestions_<id>` | MEDIUM |
-| `getTrendingSongs(limit)` | `trending_<limit>` | SHORT |
-| `getArtistSongs(artistId, page)` | `artist_songs_<artistId>_<page>` | MEDIUM |
+| Source | Key format | TTL | Notes |
+|--------|-----------|-----|-------|
+| `searchSongs(q, page, limit)` | `search_<q>_<page>_<limit>` | MEDIUM | Cached in `saavnApi.ts` |
+| `getSongById(id)` | `song_<id>` | LONG | |
+| `getSongSuggestions(id)` | `suggestions_<id>` | MEDIUM | |
+| `getTrendingSongs(limit)` | `trending_<limit>` | SHORT | |
+| `getArtistSongs(artistId, page)` | `artist_songs_<artistId>_<page>` | MEDIUM | |
+| `getDynamicHomeQuery()` | `home_query_<period>` | LONG | Period = `morning`\|`afternoon`\|`evening`\|`night`\|`late_night` |
 
 **Cache miss flow:**
 ```
@@ -157,7 +158,7 @@ getCached(key) → null (miss or expired)
 
 **Cache invalidation:**
 - Entries expire automatically when `Date.now() - timestamp > ttl`.
-- `clearAllCache()` removes all `@mume_cache_*` keys (available in Settings).
+- `clearAllCache()` removes all `@lokal_cache_*` keys — accessible via Settings → Clear Cache.
 - `removeCached(key)` removes a single entry.
 
 ---

@@ -1,3 +1,5 @@
+import { getCached, setCached, TTL } from '../utils/cache';
+
 const GEMINI_API_KEY = 'AIzaSyDwmHUf3T5RC0-ps4_PRYMQNeuiPg2ISDQ';
 const AICC_API_KEY = 'sk-OaVqW4vYpSjmcQtusAe1h19lOcBbDgFamC3vLOpkShrankmy';
 const AICC_URL = 'https://api.ai.cc/v1/chat/completions'; // Replace with your actual Gemini key
@@ -316,26 +318,56 @@ export function extractSongNames(aiResponse: string): string[] {
  */
 export async function getDynamicHomeQuery(): Promise<string> {
   const hour = new Date().getHours();
-  let ctx =
-    hour < 6
+  const period =
+    hour < 6 ? 'late_night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+  const ctx =
+    period === 'late_night'
       ? 'late night ambient chill'
-      : hour < 12
+      : period === 'morning'
       ? 'morning energetic upbeat'
-      : hour < 17
+      : period === 'afternoon'
       ? 'afternoon focus work'
-      : hour < 21
+      : period === 'evening'
       ? 'evening mood relaxing'
       : 'night vibes mellow';
+
+  // Use static fallback immediately — no wait
+  const staticFallbacks: Record<string, string> = {
+    late_night: 'late night chill',
+    morning: 'morning energy',
+    afternoon: 'afternoon focus',
+    evening: 'evening relaxing',
+    night: 'night vibes',
+  };
+
+  // Check cache first (keyed by time period, valid for 1 hour)
+  const cacheKey = `home_query_${period}`;
   try {
-    const raw = await askAI(
-      `You are a music search assistant. Suggest ONE concise 2-3 word music search query for "${ctx}" music. Reply with ONLY the search query, nothing else.`,
-      [],
-    );
-    const cleaned = raw.split('\n')[0].replace(/["'.!]/g, '').trim();
-    return cleaned.length > 2 && cleaned.length < 40 ? cleaned : 'top hits';
+    const cached = await getCached<string>(cacheKey);
+    if (cached) return cached;
   } catch {
-    return 'top hits';
+    // ignore cache errors
   }
+
+  // Return static fallback immediately; warm cache in background
+  const staticResult = staticFallbacks[period] ?? 'top hits';
+
+  // Fire-and-forget: call AI in background to populate cache for next load
+  (async () => {
+    try {
+      const raw = await askAI(
+        `You are a music search assistant. Suggest ONE concise 2-3 word music search query for "${ctx}" music. Reply with ONLY the search query, nothing else.`,
+        [],
+      );
+      const cleaned = raw.split('\n')[0].replace(/["'.!]/g, '').trim();
+      const result = cleaned.length > 2 && cleaned.length < 40 ? cleaned : staticResult;
+      await setCached(cacheKey, result, TTL.LONG);
+    } catch {
+      // background warm — safe to ignore
+    }
+  })();
+
+  return staticResult;
 }
 
 /**

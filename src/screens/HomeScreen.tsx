@@ -26,6 +26,7 @@ import SongOptionsModal from '../components/SongOptionsModal';
 import usePlayerStore from '../store/usePlayerStore';
 import useThemeStore from '../store/useThemeStore';
 import { HomeTabType, RootStackParamList, Song, SongImage } from '../types';
+import { getCached } from '../utils/cache';
 import { getArtistName, getImageUrl } from '../utils/helpers';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -89,16 +90,46 @@ export default function HomeScreen() {
     loadInitialSongs();
   }, []);
 
-  const loadInitialSongs = async () => {
-    setIsLoading(true);
+  const loadInitialSongs = async (showSpinner = true) => {
+    // --- Step 1: Try to serve cached data immediately ---
+    const hour = new Date().getHours();
+    const period =
+      hour < 6 ? 'late_night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+    const staticQueries: Record<string, string> = {
+      late_night: 'late night chill',
+      morning: 'morning energy',
+      afternoon: 'afternoon focus',
+      evening: 'evening relaxing',
+      night: 'night vibes',
+    };
+    const staticQuery = staticQueries[period] ?? 'top hits';
+
+    if (showSpinner) {
+      // Check if songs for this time-of-day are already cached → render instantly
+      const cachedKey = `search_${staticQuery}_1_40`;
+      const cachedResult = await getCached<{ songs: Song[]; total: number }>(cachedKey);
+      if (cachedResult && cachedResult.songs.length > 0) {
+        setSongs(cachedResult.songs);
+        setAiQueryHint(staticQuery);
+        setIsLoading(false);
+        // Silently refresh in background (no spinner, no recursion)
+        fetchFreshSongs(staticQuery);
+        return;
+      }
+      setIsLoading(true);
+    }
+
+    await fetchFreshSongs(staticQuery);
+  };
+
+  const fetchFreshSongs = async (defaultQuery: string) => {
     try {
-      // Use AI to generate a dynamic home screen query based on time-of-day
-      let query = 'top hits';
+      let query = defaultQuery;
       try {
         query = await getDynamicHomeQuery();
         setAiQueryHint(query);
       } catch {
-        query = 'top hits';
+        // keep defaultQuery
       }
       const result = await searchSongs(query, 1, 40);
       if (result.songs.length > 0) {

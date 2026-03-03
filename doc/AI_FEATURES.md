@@ -1,47 +1,74 @@
-# AI Features — How Gemini Powers Mume
+# AI Features — LLM Stack in Lokal
 
-This document describes every place the Gemini AI API is used in the app, what it does, why it was chosen over a hardcoded algorithm, and how to add more AI hooks.
+This document describes every place large language models (LLMs) are used in the app, the three-tier fallback chain, caching strategy, and how to extend AI hooks.
 
 ---
 
-## Architecture Overview
+## LLM Stack — Three-Tier Fallback
 
 ```
 User action / app event
        │
        ▼
-aiService.ts  (Gemini Flash API)
+ aiService.ts
        │
-       ▼
-Dynamic data / query / text
+       ├─ Tier 1: Google Gemini (gemini-flash-latest)
+       │       └─ fast, low-latency, free tier available
        │
-       ├── JioSaavn search query  → searchSongs() → Song[]
-       ├── Queue suggestions      → searchSongs() → Song[]
-       └── Playlist name          → shown to user
+       ├─ Tier 2: api.ai.cc → gpt-4o-mini  (if Gemini fails)
+       │       └─ OpenAI-compatible endpoint, acts as hot-standby
+       │
+       └─ Tier 3: Hardcoded keyword fallback  (if both LLMs fail)
+               └─ 12 mood/genre categories, instant, no network
+                  ↓
+               Dynamic data / query / text
+                  ├── JioSaavn search query  → searchSongs() → Song[]
+                  ├── Queue suggestions      → searchSongs() → Song[]
+                  └── Playlist name          → shown to user
 ```
 
-All AI calls go through `src/api/aiService.ts`. The Gemini `flash-latest` model is used for all requests (fast, low-latency, good for short completions).
+All AI calls go through `src/api/aiService.ts`. The active call chain is:
+
+1. `askAI(prompt, history)` — tries Gemini first
+2. On Gemini failure → `askFallbackAI(prompt)` — calls `api.ai.cc` with `gpt-4o-mini`
+3. On both failures → `getHardcodedFallback(userMessage)` — keyword-based instant response
+
+**API keys (in `aiService.ts`):**
+| Constant | Value | Model |
+|----------|-------|-------|
+| `GEMINI_API_KEY` | Google AI Studio key | `gemini-flash-latest` |
+| `AICC_API_KEY` | api.ai.cc token | `gpt-4o-mini` |
+| `AICC_URL` | `https://api.ai.cc/v1/chat/completions` | OpenAI-compatible |
 
 ---
 
 ## AI Features in Production
 
 ### 1. Dynamic Home Screen Feed
-**File:** `src/screens/HomeScreen.tsx` (calls `getDynamicHomeQuery()`)  
+**File:** `src/screens/HomeScreen.tsx` + `src/api/aiService.ts` (`getDynamicHomeQuery()`)  
 **Trigger:** App load / home screen mount  
-**What it does:** Instead of always loading the same hardcoded artist (previously "arijit singh"), the AI reads the current time-of-day and generates a context-aware search query:
+**What it does:** Generates a time-of-day-aware search query used to populate the home feed.
 
-| Time | Context sent to AI | Example query returned |
-|------|-------------------|----------------------|
-| 00:00 – 05:59 | "late night ambient chill" | "lofi chill beats" |
-| 06:00 – 11:59 | "morning energetic upbeat" | "morning motivation hits" |
-| 12:00 – 16:59 | "afternoon focus work" | "focus study music" |
-| 17:00 – 20:59 | "evening mood relaxing" | "evening soul vibes" |
-| 21:00 – 23:59 | "night vibes mellow" | "night jazz smooth" |
+| Time period | Period key | Static fallback (instant) | AI may refine to |
+|-------------|-----------|--------------------------|------------------|
+| 00:00–05:59 | `late_night` | `"late night chill"` | `"lofi chill beats"` |
+| 06:00–11:59 | `morning` | `"morning energy"` | `"morning motivation hits"` |
+| 12:00–16:59 | `afternoon` | `"afternoon focus"` | `"focus study music"` |
+| 17:00–20:59 | `evening` | `"evening relaxing"` | `"evening soul vibes"` |
+| 21:00–23:59 | `night` | `"night vibes"` | `"night jazz smooth"` |
 
-The query is then passed to `searchSongs()` to populate the home feed. A small `✨ AI picked: <query>` label is shown at the top of the Suggested tab so the user can see what the AI chose.
+**Performance strategy (no blocking AI wait):**
+1. `getDynamicHomeQuery()` returns the static fallback string **immediately** (zero latency)
+2. Simultaneously fires an LLM call in the background to get a refined query
+3. Background result is written to cache key `home_query_<period>` with `TTL.LONG` (1 hour)
+4. On the **next** call within the same hour-period, the cache is served — the AI-refined query is used instantly with no network wait at all
 
-**Fallback:** If the AI call fails or times out, falls back to `"top hits"`.
+**HomeScreen cache-first loading:**
+1. On mount, `HomeScreen` checks AsyncStorage for `search_<staticQuery>_1_40`
+2. Cache hit → songs rendered instantly, no spinner; background refresh runs silently
+3. Cache miss → shows spinner, fetches fresh, cache is populated for next open
+
+**Fallback chain:** Static string → Gemini → api.ai.cc → `"top hits"`
 
 ---
 
@@ -77,7 +104,7 @@ for (const q of suggestions) {
 - Ask music trivia
 - Get playlist ideas
 
-The system prompt (`SYSTEM_PROMPT` in `aiService.ts`) instructs Gemini to act as "Mume AI" — a friendly music assistant that recommends songs available on JioSaavn.
+The system prompt (`SYSTEM_PROMPT` in `aiService.ts`) instructs the LLM to act as "Lokal AI" — a friendly music assistant that recommends songs available on JioSaavn.
 
 **Song extraction:** `extractSongNames(aiResponse)` parses `"Song Name" by Artist` patterns from the AI response so the app can directly search and play them.
 
@@ -122,24 +149,41 @@ const result = await searchSongs(query, 1, 30);
 
 ## API Configuration
 
+### Tier 1 — Gemini
 | Setting | Value | Notes |
 |---------|-------|-------|
 | Model | `gemini-flash-latest` | Fast, cost-effective for short completions |
 | Max output tokens | 500 | Prevents runaway long responses |
 | Temperature | 0.7 | Balanced creativity vs. consistency |
-| System prompt | In `SYSTEM_PROMPT` const | Scopes the model to music topics |
+| System prompt | `SYSTEM_PROMPT` const | Scopes the model to music topics |
+
+### Tier 2 — api.ai.cc (gpt-4o-mini)
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Model | `gpt-4o-mini` | OpenAI-compatible, low-cost |
+| Endpoint | `https://api.ai.cc/v1/chat/completions` | Drop-in OpenAI API replacement |
+| Max tokens | 500 | Same cap as Gemini |
+| Temperature | 0.7 | Same as Gemini for consistency |
+
+### Tier 3 — Hardcoded Keyword Fallback
+Matches keywords in the user's message against 12 categories:  
+`chill`, `workout`, `romantic`, `sad`, `party`, `road trip`, `morning`, `night`, `bollywood`, `trending`, `punjabi`, `focus`  
+Each category returns a fixed list of songs in `"Song Name" by Artist` format, which `extractSongNames()` can parse for JioSaavn searching.
 
 **Key location:** `src/api/aiService.ts`  
-**API key:** Replace `GEMINI_API_KEY` with your own key from [Google AI Studio](https://aistudio.google.com/)
+**Gemini key:** Replace `GEMINI_API_KEY` — get from [Google AI Studio](https://aistudio.google.com/)  
+**api.ai.cc key:** Replace `AICC_API_KEY` — get from [api.ai.cc console](https://api.ai.cc/console/token)
 
 ---
 
 ## Adding New AI Features
 
 1. Add a new async function in `src/api/aiService.ts` that calls `askAI(prompt, history)`
-2. Keep prompts precise and request structured output (one item per line, specific format)
-3. Always add a `try/catch` with a sensible fallback so AI failures don't break the UI
-4. Document the new feature in this file
+2. `askAI` already handles the full three-tier fallback — you get Gemini → api.ai.cc → hardcoded automatically
+3. Keep prompts precise and request structured output (one item per line, specific format)
+4. Cache the result where appropriate using `setCached(key, data, TTL.LONG)` from `src/utils/cache.ts`
+5. Always add a `try/catch` with a sensible static fallback so LLM failures never block the UI
+6. Document the new feature in this file
 
 ---
 
