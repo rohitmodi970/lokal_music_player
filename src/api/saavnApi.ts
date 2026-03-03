@@ -120,17 +120,79 @@ export async function getArtistSongs(
 
   try {
     const res = await fetch(
-      `${BASE_URL}/api/artists/${artistId}/songs?page=${page}`,
+      `${BASE_URL}/api/artists/${artistId}/songs?page=${page}&limit=20`,
     );
     const json = await res.json();
     if (json.success && json.data) {
-      const songs = Array.isArray(json.data) ? json.data : json.data.results || [];
-      await setCached(cacheKey, songs, TTL.MEDIUM);
-      return songs;
+      // Handle multiple possible shapes from the API
+      let songs: Song[] = [];
+      if (Array.isArray(json.data)) {
+        songs = json.data;
+      } else if (Array.isArray(json.data.results)) {
+        songs = json.data.results;
+      } else if (Array.isArray(json.data.songs)) {
+        songs = json.data.songs;
+      } else if (json.data.topSongs && Array.isArray(json.data.topSongs)) {
+        songs = json.data.topSongs;
+      }
+      if (songs.length > 0) {
+        await setCached(cacheKey, songs, TTL.MEDIUM);
+        return songs;
+      }
     }
     return [];
   } catch (e) {
     console.error('getArtistSongs error:', e);
+    return [];
+  }
+}
+
+/** Fallback: search songs by artist name when ID-based fetch returns nothing */
+export async function searchSongsByArtist(
+  artistName: string,
+  limit: number = 20,
+): Promise<Song[]> {
+  const cacheKey = `artist_search_${artistName}_${limit}`;
+  const cached = await getCached<Song[]>(cacheKey);
+  if (cached) return cached;
+  try {
+    const result = await searchSongs(artistName, 1, limit);
+    const filtered = result.songs.filter((s) => {
+      const artists = [
+        ...(s.artists?.primary ?? []),
+        ...(s.artists?.featured ?? []),
+        ...(s.artists?.all ?? []),
+      ];
+      return artists.some((a) =>
+        a.name.toLowerCase().includes(artistName.toLowerCase()),
+      );
+    });
+    const songs = filtered.length > 0 ? filtered : result.songs;
+    if (songs.length > 0) await setCached(cacheKey, songs, TTL.MEDIUM);
+    return songs;
+  } catch (e) {
+    console.error('searchSongsByArtist error:', e);
+    return [];
+  }
+}
+
+// ---------- Albums API ----------
+
+export async function getAlbumSongs(albumId: string): Promise<Song[]> {
+  const cacheKey = `album_songs_${albumId}`;
+  const cached = await getCached<Song[]>(cacheKey);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${BASE_URL}/api/albums?id=${albumId}`);
+    const json = await res.json();
+    if (json.success && json.data?.songs) {
+      const songs: Song[] = Array.isArray(json.data.songs) ? json.data.songs : [];
+      if (songs.length > 0) await setCached(cacheKey, songs, TTL.LONG);
+      return songs;
+    }
+    return [];
+  } catch (e) {
+    console.error('getAlbumSongs error:', e);
     return [];
   }
 }

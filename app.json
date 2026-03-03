@@ -19,7 +19,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.WRITE_SETTINGS"
+      ]
     },
     "web": {
       "output": "static",
@@ -38,7 +43,17 @@
             "backgroundColor": "#0D0D0D"
           }
         }
-      ]
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos.",
+          "isAccessMediaLocationEnabled": true,
+          "audioPermission": "Allow $(PRODUCT_NAME) to access your audio files."
+        }
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "reactCompiler": true

@@ -1,4 +1,5 @@
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { View } from 'react-native';
@@ -6,11 +7,13 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import './app/global.css';
 
-import { initAudio, startStoreSubscription } from './src/audio/audioManager';
+import { initAudio, skipNext, skipPrevious, startStoreSubscription, togglePlayPause } from './src/audio/audioManager';
 import AppNavigator from './src/navigation/AppNavigator';
+import useLibraryStore from './src/store/useLibraryStore';
 import usePlayerStore from './src/store/usePlayerStore';
 import useThemeStore from './src/store/useThemeStore';
 import { RootStackParamList } from './src/types';
+import { initNotifications } from './src/utils/notificationManager';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -22,6 +25,39 @@ export default function App() {
     startStoreSubscription();
     usePlayerStore.getState().loadPersistedQueue();
     useThemeStore.getState().loadTheme();
+
+    // Init notification permissions + channel + categories
+    initNotifications();
+
+    // Load persisted library (favorites, playlists, history)
+    useLibraryStore.getState().loadLibrary();
+
+    // Handle tapping the notification (or action buttons on iOS)
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const actionId = response.actionIdentifier;
+      const data = response.notification.request.content.data as Record<string, string>;
+
+      // Action buttons (iOS only)
+      if (actionId === 'PREVIOUS') {
+        skipPrevious();
+        return;
+      }
+      if (actionId === 'NEXT') {
+        skipNext();
+        return;
+      }
+      if (actionId === 'PLAY' || actionId === 'PAUSE') {
+        togglePlayPause();
+        return;
+      }
+
+      // Default tap — navigate to Player screen
+      if (data?.navigateTo === 'Player' && navigationRef.isReady()) {
+        navigationRef.navigate('Player');
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   return (

@@ -9,6 +9,7 @@ import ArtistDetailScreen from '../screens/ArtistDetailScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
 import HomeScreen from '../screens/HomeScreen';
 import PlayerScreen from '../screens/PlayerScreen';
+import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import PlaylistsScreen from '../screens/PlaylistsScreen';
 import QueueScreen from '../screens/QueueScreen';
 import SearchScreen from '../screens/SearchScreen';
@@ -108,6 +109,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="ArtistDetail" component={ArtistDetailScreen} />
       <Stack.Screen name="AiChat" component={AiChatScreen} />
+      <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
     </Stack.Navigator>
   );
 }

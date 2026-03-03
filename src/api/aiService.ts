@@ -96,3 +96,91 @@ export function extractSongNames(aiResponse: string): string[] {
   }
   return songs;
 }
+
+/**
+ * AI-powered dynamic home screen search query based on time of day.
+ * Returns a query string like "morning workout beats" or "late night jazz".
+ * Falls back to a static default on error.
+ */
+export async function getDynamicHomeQuery(): Promise<string> {
+  const hour = new Date().getHours();
+  let ctx =
+    hour < 6
+      ? 'late night ambient chill'
+      : hour < 12
+      ? 'morning energetic upbeat'
+      : hour < 17
+      ? 'afternoon focus work'
+      : hour < 21
+      ? 'evening mood relaxing'
+      : 'night vibes mellow';
+  try {
+    const raw = await askAI(
+      `You are a music search assistant. Suggest ONE concise 2-3 word music search query for "${ctx}" music. Reply with ONLY the search query, nothing else.`,
+      [],
+    );
+    const cleaned = raw.split('\n')[0].replace(/["'.!]/g, '').trim();
+    return cleaned.length > 2 && cleaned.length < 40 ? cleaned : 'top hits';
+  } catch {
+    return 'top hits';
+  }
+}
+
+/**
+ * AI-powered smart queue suggestions after a song ends.
+ * Returns up to 3 JioSaavn-searchable query strings.
+ */
+export async function getSmartQueueSuggestions(
+  songName: string,
+  artistName: string,
+): Promise<string[]> {
+  try {
+    const resp = await askAI(
+      `I just listened to "${songName}" by ${artistName}. Give me 3 similar songs I might enjoy. List each as "Song Title by Artist" on a separate line. No bullets, no numbering.`,
+      [],
+    );
+    return resp
+      .split('\n')
+      .map((l) => l.replace(/^[-•*\d.]+\s*/, '').trim())
+      .filter((l) => l.length > 2)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * AI-powered playlist name generator.
+ * Analyzes a sample of song names and proposes a creative name.
+ */
+export async function generateSmartPlaylistName(songNames: string[]): Promise<string> {
+  if (songNames.length === 0) return 'My Playlist';
+  try {
+    const sample = songNames.slice(0, 5).join(', ');
+    const resp = await askAI(
+      `Create a creative, short (2-4 words) playlist name for a playlist containing songs like: ${sample}. Reply with ONLY the playlist name.`,
+      [],
+    );
+    const name = resp.split('\n')[0].replace(/["'.]/g, '').trim();
+    return name.length > 0 && name.length < 50 ? name : 'My Playlist';
+  } catch {
+    return 'My Playlist';
+  }
+}
+
+/**
+ * AI-powered mood-to-query mapper.
+ * Given a mood string (e.g. "happy", "sad", "workout"), returns a search query.
+ */
+export async function moodToSearchQuery(mood: string): Promise<string> {
+  try {
+    const resp = await askAI(
+      `Convert this mood/vibe into a 2-3 word music search query for JioSaavn: "${mood}". Reply with ONLY the search query.`,
+      [],
+    );
+    const q = resp.split('\n')[0].replace(/["'.]/g, '').trim();
+    return q.length > 0 && q.length < 40 ? q : mood;
+  } catch {
+    return mood;
+  }
+}

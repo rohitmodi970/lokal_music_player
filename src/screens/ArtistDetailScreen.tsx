@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getArtistSongs } from '../api/saavnApi';
+import { getArtistSongs, searchSongsByArtist } from '../api/saavnApi';
 import { loadAndPlay } from '../audio/audioManager';
 import usePlayerStore from '../store/usePlayerStore';
 import useThemeStore from '../store/useThemeStore';
@@ -40,8 +40,13 @@ export default function ArtistDetailScreen() {
   const loadSongs = async () => {
     setIsLoading(true);
     try {
-      const result = await getArtistSongs(artistId, 1);
-      setSongs(Array.isArray(result) ? result : []);
+      // Try the artist-ID endpoint first
+      let result = await getArtistSongs(artistId, 1);
+      // If no songs returned, fall back to name-based search
+      if (result.length === 0) {
+        result = await searchSongsByArtist(artistName, 20);
+      }
+      setSongs(result);
     } catch (e) {
       console.error('Failed to load artist songs:', e);
     } finally {

@@ -51,11 +51,13 @@ export interface Song {
   releaseDate?: string | null;
   featuredArtists?: string;
   featuredArtistsId?: string;
+  /** Local device file URI — used instead of downloadUrl when playing local songs */
+  localUri?: string;
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
-export type HomeTabType = 'Suggested' | 'Songs' | 'Artists';
+export type HomeTabType = 'Suggested' | 'Songs' | 'Albums' | 'Artists' | 'Local';
 
 export type RootStackParamList = {
   MainTabs: undefined;
@@ -64,6 +66,7 @@ export type RootStackParamList = {
   Search: undefined;
   ArtistDetail: { artistId: string; artistName: string; artistImage?: string };
   AiChat: undefined;
+  PlaylistDetail: { playlistId: string; playlistName: string; emoji?: string };
 };
 
 export type MainTabParamList = {

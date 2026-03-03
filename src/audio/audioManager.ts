@@ -1,7 +1,12 @@
 import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 
+import useLibraryStore from '../store/useLibraryStore';
 import usePlayerStore, { getCurrentSong } from '../store/usePlayerStore';
 import { getDownloadUrl } from '../utils/helpers';
+import {
+    dismissPlaybackNotification,
+    showPlaybackNotification,
+} from '../utils/notificationManager';
 
 let sound: Audio.Sound | null = null;
 let isLoadingSound = false;
@@ -87,7 +92,7 @@ export async function loadAndPlay(): Promise<void> {
       sound = null;
     }
 
-    const url = getDownloadUrl(song.downloadUrl, '320kbps');
+    const url = song.localUri ?? getDownloadUrl(song.downloadUrl, '320kbps');
     if (!url) {
       console.error('No download URL for song:', song.name);
       store.setIsLoading(false);
@@ -104,6 +109,10 @@ export async function loadAndPlay(): Promise<void> {
     sound = newSound;
     store.setIsPlaying(true);
     store.setIsLoading(false);
+    // Add to history
+    useLibraryStore.getState().addToHistory(song);
+    // Show playback notification with current song
+    showPlaybackNotification(song, true).catch(() => {});
   } catch (e) {
     console.error('loadAndPlay error:', e);
     store.setIsLoading(false);
@@ -115,14 +124,20 @@ export async function loadAndPlay(): Promise<void> {
 export async function play(): Promise<void> {
   if (sound) {
     await sound.playAsync();
-    usePlayerStore.getState().setIsPlaying(true);
+    const store = usePlayerStore.getState();
+    store.setIsPlaying(true);
+    const song = getCurrentSong(store);
+    if (song) showPlaybackNotification(song, true).catch(() => {});
   }
 }
 
 export async function pause(): Promise<void> {
   if (sound) {
     await sound.pauseAsync();
-    usePlayerStore.getState().setIsPlaying(false);
+    const store = usePlayerStore.getState();
+    store.setIsPlaying(false);
+    const song = getCurrentSong(store);
+    if (song) showPlaybackNotification(song, false).catch(() => {});
   }
 }
 
@@ -169,6 +184,7 @@ export async function stopAndUnload(): Promise<void> {
   store.setIsPlaying(false);
   store.setPosition(0);
   store.setDuration(0);
+  dismissPlaybackNotification().catch(() => {});
 }
 
 /**
