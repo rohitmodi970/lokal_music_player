@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Linking,
@@ -11,7 +11,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { togglePlayPause } from '../audio/audioManager';
+import usePlayerStore from '../store/usePlayerStore';
 import useThemeStore from '../store/useThemeStore';
+import { clearAllCache } from '../utils/cache';
 
 interface SettingRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -20,20 +23,21 @@ interface SettingRowProps {
   onPress?: () => void;
   rightElement?: React.ReactNode;
   colors: any;
+  isLast?: boolean;
 }
 
-function SettingRow({ icon, label, subtitle, onPress, rightElement, colors }: SettingRowProps) {
+function SettingRow({ icon, label, subtitle, onPress, rightElement, colors, isLast }: SettingRowProps) {
   return (
     <TouchableOpacity
-      className="flex-row items-center px-3.5 py-3.5 border-b-[0.5px]"
-      style={{ borderBottomColor: colors.border }}
+      className="flex-row items-center px-3.5 py-3.5"
+      style={{ borderBottomWidth: isLast ? 0 : 0.5, borderBottomColor: colors.border }}
       onPress={onPress}
       activeOpacity={onPress ? 0.6 : 1}
       disabled={!onPress && !rightElement}
     >
       <View
         className="w-9 h-9 rounded-[10px] justify-center items-center mr-3"
-        style={{ backgroundColor: colors.primary + '15' }}
+        style={{ backgroundColor: colors.primary + '18' }}
       >
         <Ionicons name={icon} size={20} color={colors.primary} />
       </View>
@@ -43,15 +47,157 @@ function SettingRow({ icon, label, subtitle, onPress, rightElement, colors }: Se
           <Text className="text-xs mt-0.5" style={{ color: colors.textSecondary }}>{subtitle}</Text>
         ) : null}
       </View>
-      {rightElement || (
+      {rightElement ?? (onPress ? (
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-      )}
+      ) : null)}
     </TouchableOpacity>
   );
 }
 
+const SLEEP_OPTIONS = [
+  { label: '15 minutes', ms: 15 * 60 * 1000 },
+  { label: '30 minutes', ms: 30 * 60 * 1000 },
+  { label: '45 minutes', ms: 45 * 60 * 1000 },
+  { label: '1 hour', ms: 60 * 60 * 1000 },
+];
+
+function formatCountdown(ms: number): string {
+  const totalSec = Math.ceil(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 export default function SettingsScreen() {
   const { colors, isDark, toggleTheme } = useThemeStore();
+  const { isPlaying } = usePlayerStore();
+
+  // Sleep timer
+  const [sleepRemaining, setSleepRemaining] = useState<number | null>(null);
+  const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Clear any existing timer
+  const cancelSleepTimer = () => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    sleepTimerRef.current = null;
+    countdownRef.current = null;
+    setSleepRemaining(null);
+  };
+
+  const startSleepTimer = (ms: number) => {
+    cancelSleepTimer();
+    setSleepRemaining(ms);
+
+    // Tick every second
+    let remaining = ms;
+    countdownRef.current = setInterval(() => {
+      remaining -= 1000;
+      if (remaining <= 0) {
+        cancelSleepTimer();
+      } else {
+        setSleepRemaining(remaining);
+      }
+    }, 1000);
+
+    // When time's up — pause playback
+    sleepTimerRef.current = setTimeout(() => {
+      cancelSleepTimer();
+      if (isPlaying) togglePlayPause();
+      Alert.alert('Sleep Timer', 'Playback paused. Goodnight! 🌙');
+    }, ms);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  const handleSleepTimer = () => {
+    if (sleepRemaining !== null) {
+      Alert.alert(
+        'Sleep Timer',
+        `Time remaining: ${formatCountdown(sleepRemaining)}`,
+        [
+          { text: 'Cancel Timer', style: 'destructive', onPress: () => { cancelSleepTimer(); Alert.alert('Sleep Timer', 'Timer cancelled.'); } },
+          { text: 'Keep Running', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Sleep Timer',
+      'Pause music after:',
+      [
+        ...SLEEP_OPTIONS.map((opt) => ({
+          text: opt.label,
+          onPress: () => {
+            startSleepTimer(opt.ms);
+            Alert.alert('Sleep Timer Set', `Music will pause in ${opt.label} 🌙`);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Cache',
+      'This will remove all cached search results and song data. Your playlists and favorites will not be affected.',
+      [
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearAllCache();
+            Alert.alert('Cache Cleared', 'Cache has been cleared successfully ✓');
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
+
+  const handleEqualizer = () => {
+    Alert.alert(
+      'Equalizer',
+      'To adjust audio settings, open your device\'s built-in equalizer or music settings.',
+      [
+        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
+
+  const handleAudioQuality = () => {
+    Alert.alert(
+      'Audio Quality',
+      'Lokal streams at the highest available quality from JioSaavn (up to 320kbps).',
+      [{ text: 'OK' }],
+    );
+  };
+
+  const handleAbout = () => {
+    Alert.alert(
+      'About Lokal',
+      'Lokal Music Player v1.0.0\n\nBuilt with React Native & Expo\n\nStreaming powered by JioSaavn\nAI powered by Gemini & Lokal AI',
+      [{ text: 'OK' }],
+    );
+  };
+
+  const handleFeedback = () => {
+    Linking.openURL('mailto:feedback@lokal.app?subject=Lokal%20App%20Feedback').catch(
+      () => Alert.alert('Feedback', 'Send your feedback to feedback@lokal.app'),
+    );
+  };
 
   return (
     <SafeAreaView className="flex-1" style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
@@ -60,17 +206,16 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={false}>
-        {/* Appearance Section */}
-        <Text
-          className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1"
-          style={{ color: colors.textSecondary }}
-        >APPEARANCE</Text>
+
+        {/* Appearance */}
+        <Text className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1" style={{ color: colors.textSecondary }}>APPEARANCE</Text>
         <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
           <SettingRow
             icon="moon-outline"
             label="Dark Mode"
             subtitle={isDark ? 'On' : 'Off'}
             colors={colors}
+            isLast
             rightElement={
               <Switch
                 value={isDark}
@@ -82,80 +227,95 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* Playback Section */}
-        <Text
-          className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1"
-          style={{ color: colors.textSecondary }}
-        >PLAYBACK</Text>
+        {/* Playback */}
+        <Text className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1" style={{ color: colors.textSecondary }}>PLAYBACK</Text>
         <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
           <SettingRow
-            icon="volume-high-outline"
+            icon="musical-notes-outline"
             label="Audio Quality"
             subtitle="High (320kbps)"
             colors={colors}
-            onPress={() => Alert.alert('Audio Quality', 'High quality streaming is enabled.')}
+            onPress={handleAudioQuality}
           />
           <SettingRow
-            icon="download-outline"
-            label="Download Quality"
-            subtitle="High (320kbps)"
+            icon="options-outline"
+            label="Equalizer"
+            subtitle="Open device equalizer"
             colors={colors}
-            onPress={() => Alert.alert('Download Quality', 'High quality downloads enabled.')}
+            onPress={handleEqualizer}
           />
           <SettingRow
             icon="timer-outline"
             label="Sleep Timer"
-            subtitle="Off"
+            subtitle={sleepRemaining !== null ? `Stops in ${formatCountdown(sleepRemaining)}` : 'Off'}
             colors={colors}
-            onPress={() => Alert.alert('Sleep Timer', 'Sleep timer feature coming soon.')}
+            onPress={handleSleepTimer}
+            isLast
+            rightElement={sleepRemaining !== null ? (
+              <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.primary + '20' }}>
+                <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+                  {formatCountdown(sleepRemaining)}
+                </Text>
+              </View>
+            ) : undefined}
           />
         </View>
 
-        {/* General Section */}
-        <Text
-          className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1"
-          style={{ color: colors.textSecondary }}
-        >GENERAL</Text>
+        {/* Storage */}
+        <Text className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1" style={{ color: colors.textSecondary }}>STORAGE</Text>
         <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
           <SettingRow
-            icon="language-outline"
-            label="Language"
-            subtitle="English"
+            icon="trash-outline"
+            label="Clear Cache"
+            subtitle="Remove cached search results"
             colors={colors}
-            onPress={() => Alert.alert('Language', 'Only English is supported currently.')}
+            onPress={handleClearCache}
+            isLast
           />
+        </View>
+
+        {/* General */}
+        <Text className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1" style={{ color: colors.textSecondary }}>GENERAL</Text>
+        <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
           <SettingRow
             icon="notifications-outline"
             label="Notifications"
-            subtitle="Enabled"
+            subtitle="Manage notification permissions"
             colors={colors}
             onPress={() => Linking.openSettings()}
           />
+          <SettingRow
+            icon="chatbubble-ellipses-outline"
+            label="Send Feedback"
+            subtitle="Help us improve Lokal"
+            colors={colors}
+            onPress={handleFeedback}
+            isLast
+          />
         </View>
 
-        {/* About Section */}
-        <Text
-          className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1"
-          style={{ color: colors.textSecondary }}
-        >ABOUT</Text>
+        {/* About */}
+        <Text className="text-xs font-bold tracking-wider mt-5 mb-2 ml-1" style={{ color: colors.textSecondary }}>ABOUT</Text>
         <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
           <SettingRow
             icon="information-circle-outline"
-            label="App Version"
-            subtitle="1.0.0"
+            label="About Lokal"
+            subtitle="Version 1.0.0"
             colors={colors}
+            onPress={handleAbout}
           />
           <SettingRow
             icon="shield-checkmark-outline"
             label="Privacy Policy"
             colors={colors}
-            onPress={() => Alert.alert('Privacy Policy', 'Privacy policy will be available soon.')}
+            onPress={() => Alert.alert('Privacy Policy', 'Your data is stored locally on your device. We do not sell or share personal information.')}
           />
           <SettingRow
             icon="document-text-outline"
             label="Terms of Service"
             colors={colors}
-            onPress={() => Alert.alert('Terms', 'Terms of service will be available soon.')}
+            onPress={() => Alert.alert('Terms of Service', 'By using Lokal, you agree to use the app for personal, non-commercial purposes only.')}
+            isLast
           />
         </View>
 

@@ -1,4 +1,6 @@
-const GEMINI_API_KEY = 'AIzaSyDwmHUf3T5RC0-ps4_PRYMQNeuiPg2ISDQ'; // Replace with your actual Gemini key
+const GEMINI_API_KEY = 'AIzaSyDwmHUf3T5RC0-ps4_PRYMQNeuiPg2ISDQ';
+const AICC_API_KEY = 'sk-OaVqW4vYpSjmcQtusAe1h19lOcBbDgFamC3vLOpkShrankmy';
+const AICC_URL = 'https://api.ai.cc/v1/chat/completions'; // Replace with your actual Gemini key
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -193,6 +195,43 @@ function getHardcodedFallback(userMessage: string): string {
   }
   return DEFAULT_FALLBACK;
 }
+
+/** Secondary AI fallback using api.ai.cc (OpenAI-compatible) */
+async function askFallbackAI(
+  userMessage: string,
+  conversationHistory: ChatMessage[] = [],
+): Promise<string | null> {
+  try {
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...conversationHistory
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+      { role: 'user', content: userMessage },
+    ];
+
+    const response = await fetch(AICC_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AICC_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages,
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    return text && text.length > 2 ? text : null;
+  } catch {
+    return null;
+  }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 function toGeminiContents(
@@ -241,7 +280,9 @@ export async function askAI(
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Gemini API error:', response.status, errorText);
-      return getHardcodedFallback(userMessage);
+      // Try secondary AI
+      const fallback = await askFallbackAI(userMessage, conversationHistory);
+      return fallback ?? getHardcodedFallback(userMessage);
     }
 
     const data: GeminiResponse = await response.json();
@@ -249,7 +290,9 @@ export async function askAI(
     return text || getHardcodedFallback(userMessage);
   } catch (error) {
     console.error('AI service error:', error);
-    return getHardcodedFallback(userMessage);
+    // Try secondary AI before hardcoded fallback
+    const fallback = await askFallbackAI(userMessage, conversationHistory);
+    return fallback ?? getHardcodedFallback(userMessage);
   }
 }
 
