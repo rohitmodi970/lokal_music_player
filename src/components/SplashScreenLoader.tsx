@@ -1,10 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Easing,
-  Image,
-  StyleSheet,
+    Animated,
+    Dimensions,
+    Easing,
+    Image,
+    StyleSheet,
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
