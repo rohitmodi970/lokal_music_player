@@ -742,7 +742,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Ionicons name="musical-notes" size={28} color={colors.primary} />
-          <Text style={[styles.brandName, { color: colors.text }]}>Mume</Text>
+          <Text style={[styles.brandName, { color: colors.text }]}>Lokal</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity

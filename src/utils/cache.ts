@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const CACHE_PREFIX = '@mume_cache_';
+const CACHE_PREFIX = '@lokal_cache_';
 
 interface CacheEntry<T> {
   data: T;

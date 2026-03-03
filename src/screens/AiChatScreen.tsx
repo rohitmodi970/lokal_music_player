@@ -233,7 +233,7 @@ export default function AiChatScreen() {
       <View className="w-20 h-20 rounded-full justify-center items-center mb-4" style={{ backgroundColor: colors.primary + '15' }}>
         <Ionicons name="sparkles" size={48} color={colors.primary} />
       </View>
-      <Text className="text-2xl font-bold" style={{ color: colors.text }}>Mume AI</Text>
+      <Text className="text-2xl font-bold" style={{ color: colors.text }}>Lokal AI</Text>
       <Text className="text-sm text-center mt-2 leading-5" style={{ color: colors.textSecondary }}>
         Your personal music assistant. Ask me anything about music!
       </Text>
@@ -262,7 +262,7 @@ export default function AiChatScreen() {
         </TouchableOpacity>
         <View className="flex-row items-center gap-1.5">
           <Ionicons name="sparkles" size={18} color={colors.primary} />
-          <Text className="text-lg font-bold" style={{ color: colors.text }}>Mume AI</Text>
+          <Text className="text-lg font-bold" style={{ color: colors.text }}>Lokal AI</Text>
         </View>
         <TouchableOpacity
           className="p-1.5 w-9"
