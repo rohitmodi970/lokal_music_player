@@ -1,5 +1,8 @@
 # Lokal — AI-Powered Music Player
 
+[![GitHub](https://img.shields.io/badge/GitHub-rohitmodi970%2Flokal__music__player-181717?logo=github)](https://github.com/rohitmodi970/lokal_music_player)
+[![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red)](#contributing)
+
 A modern React Native music player built with Expo. Lokal streams songs from JioSaavn, plays local device audio, and uses a three-tier LLM stack (Gemini → gpt-4o-mini → hardcoded fallback) to power smart recommendations, dynamic home feeds, and a conversational AI music assistant.
 
 ---
@@ -145,12 +148,14 @@ npx expo run:ios
 
 ### Environment / API Keys
 
-Open `src/api/aiService.ts` and replace the placeholder keys:
+This project is open source. You'll need to supply your own API keys for AI features. Open `src/api/aiService.ts` and replace the placeholder keys:
 
 ```typescript
 const GEMINI_API_KEY = 'YOUR_GEMINI_KEY';   // https://aistudio.google.com/
 const AICC_API_KEY   = 'YOUR_AICC_KEY';     // https://api.ai.cc/console/token
 ```
+
+> **Never commit your real API keys.** Add a `.env.local` file (already git-ignored) and load keys from there if you prefer.
 
 The JioSaavn API is public and requires no key.
 
@@ -193,26 +198,43 @@ The app requests the following at runtime:
 
 ---
 
-## License
+## Contributing
 
-Private project. All rights reserved.
+This project is **open source** and contributions are welcome!
 
-```bash
-npm run reset-project
+### Repository
+
+```
+https://github.com/rohitmodi970/lokal_music_player.git
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Reporting Issues
 
-## Learn more
+Found a bug or have a feature request?  
+[Open an issue](https://github.com/rohitmodi970/lokal_music_player/issues/new) on GitHub — please include:
+- A clear description of the problem or idea
+- Steps to reproduce (for bugs)
+- Device / OS / Expo SDK version
 
-To learn more about developing your project with Expo, look at the following resources:
+### Submitting Changes
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+1. **Fork** the repository
+2. Create a new branch from `main`:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. Make your changes and commit with a meaningful message
+4. Push your branch and open a **Pull Request** against `main`
 
-## Join the community
+> **Do not push directly to `main` (master) branch.** All changes must go through a Pull Request so they can be reviewed before merging.
 
-Join our community of developers creating universal apps.
+### Setting Up Your Own API Keys
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+When developing locally, use your own keys (see [Environment / API Keys](#environment--api-keys) above). Never commit real keys to the repository. Add them to a `.env.local` file or directly in `src/api/aiService.ts` (which is git-ignored patterns recommended).
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.  
+Feel free to use, modify, and distribute this project with attribution.
