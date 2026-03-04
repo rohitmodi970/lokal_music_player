@@ -55,7 +55,10 @@ function SettingRow({ icon, label, subtitle, onPress, rightElement, colors, isLa
 }
 
 const SLEEP_OPTIONS = [
+  { label: '5 minutes', ms: 5 * 60 * 1000 },
+  { label: '10 minutes', ms: 10 * 60 * 1000 },
   { label: '15 minutes', ms: 15 * 60 * 1000 },
+  { label: '20 minutes', ms: 20 * 60 * 1000 },
   { label: '30 minutes', ms: 30 * 60 * 1000 },
   { label: '45 minutes', ms: 45 * 60 * 1000 },
   { label: '1 hour', ms: 60 * 60 * 1000 },
@@ -194,8 +197,8 @@ export default function SettingsScreen() {
   };
 
   const handleFeedback = () => {
-    Linking.openURL('mailto:feedback@lokal.app?subject=Lokal%20App%20Feedback').catch(
-      () => Alert.alert('Feedback', 'Send your feedback to feedback@lokal.app'),
+    Linking.openURL('mailto:rohitkumar970ss@gmail.com?subject=Lokal%20Music%20Player%20Feedback').catch(
+      () => Alert.alert('Feedback', 'Send your feedback to rohitkumar970ss@gmail.com'),
     );
   };
 

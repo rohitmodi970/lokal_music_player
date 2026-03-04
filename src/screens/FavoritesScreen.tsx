@@ -46,6 +46,9 @@ export default function FavoritesScreen() {
     const imgUrl = getImageUrl(item.image, '150x150');
     const artist = getArtistName(item);
     const dur = typeof item.duration === 'string' ? parseInt(item.duration, 10) : item.duration || 0;
+    const { queue, currentIndex, isPlaying } = usePlayerStore.getState();
+    const isCurrentSong = queue[currentIndex]?.id === item.id;
+    const isCurrentPlaying = isCurrentSong && isPlaying;
 
     return (
       <TouchableOpacity
@@ -61,11 +64,14 @@ export default function FavoritesScreen() {
           </View>
         )}
         <View className="flex-1">
-          <Text className="text-sm font-semibold" style={{ color: colors.text }} numberOfLines={1}>{item.name}</Text>
+          <Text className="text-sm font-semibold" style={{ color: isCurrentSong ? colors.primary : colors.text }} numberOfLines={1}>{item.name}</Text>
           <Text className="text-xs mt-0.5" style={{ color: colors.textSecondary }} numberOfLines={1}>
             {artist}  •  {formatDuration(dur)}
           </Text>
         </View>
+        {isCurrentSong && (
+          <Ionicons name={isCurrentPlaying ? 'pause-circle' : 'play-circle'} size={24} color={colors.primary} />
+        )}
         <TouchableOpacity className="p-1.5" onPress={() => removeFavorite(item.id)}>
           <Ionicons name="heart" size={20} color={colors.primary} />
         </TouchableOpacity>

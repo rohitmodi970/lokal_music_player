@@ -105,7 +105,7 @@ export default function ArtistDetailScreen() {
             </View>
           )}
           <View className="flex-1 ml-3">
-            <Text className="text-sm font-semibold mb-0.5" style={{ color: colors.text }} numberOfLines={1}>
+            <Text className="text-sm font-semibold mb-0.5" style={{ color: (() => { const s = usePlayerStore.getState(); return s.queue[s.currentIndex]?.id === item.id ? colors.primary : colors.text; })() }} numberOfLines={1}>
               {item.name}
             </Text>
             <Text className="text-xs" style={{ color: colors.textSecondary }} numberOfLines={1}>
@@ -114,7 +114,7 @@ export default function ArtistDetailScreen() {
           </View>
           <Text className="text-xs mr-2" style={{ color: colors.textSecondary }}>{formatDuration(dur)}</Text>
           <TouchableOpacity className="w-[30px] h-[30px] rounded-[15px] border-2 justify-center items-center" style={{ borderColor: colors.primary }}>
-            <Ionicons name="play" size={14} color={colors.primary} />
+            <Ionicons name={(() => { const s = usePlayerStore.getState(); return s.queue[s.currentIndex]?.id === item.id && s.isPlaying ? 'pause' : 'play'; })()} size={14} color={colors.primary} />
           </TouchableOpacity>
         </TouchableOpacity>
       );

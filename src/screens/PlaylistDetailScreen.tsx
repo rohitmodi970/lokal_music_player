@@ -88,6 +88,9 @@ export default function PlaylistDetailScreen() {
       typeof item.duration === 'string'
         ? parseInt(item.duration, 10)
         : item.duration || 0;
+    const { queue, currentIndex, isPlaying } = usePlayerStore.getState();
+    const isCurrentSong = queue[currentIndex]?.id === item.id;
+    const isCurrentPlaying = isCurrentSong && isPlaying;
 
     return (
       <TouchableOpacity
@@ -111,7 +114,7 @@ export default function PlaylistDetailScreen() {
         )}
 
         <View className="flex-1">
-          <Text className="text-sm font-semibold" style={{ color: colors.text }} numberOfLines={1}>
+          <Text className="text-sm font-semibold" style={{ color: isCurrentSong ? colors.primary : colors.text }} numberOfLines={1}>
             {item.name}
           </Text>
           <Text className="text-xs mt-0.5" style={{ color: colors.textSecondary }} numberOfLines={1}>
@@ -119,6 +122,9 @@ export default function PlaylistDetailScreen() {
           </Text>
         </View>
 
+        {isCurrentSong && (
+          <Ionicons name={isCurrentPlaying ? 'pause-circle' : 'play-circle'} size={24} color={colors.primary} />
+        )}
         <TouchableOpacity
           className="p-2"
           onPress={() => setOptionsSong(item)}

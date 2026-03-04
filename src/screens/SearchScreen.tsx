@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { searchSongs } from '../api/saavnApi';
-import { loadAndPlay } from '../audio/audioManager';
+import { loadAndPlay, togglePlayPause } from '../audio/audioManager';
 import usePlayerStore from '../store/usePlayerStore';
 import useThemeStore from '../store/useThemeStore';
 import { RootStackParamList, Song } from '../types';
@@ -119,6 +119,23 @@ export default function SearchScreen() {
     [results, query, setQueue, setCurrentIndex, navigation],
   );
 
+  const handlePlayPausePress = useCallback(
+    (song: Song, index: number) => {
+      const { queue, currentIndex } = usePlayerStore.getState();
+      const isCurrentSong = queue[currentIndex]?.id === song.id;
+      if (isCurrentSong) {
+        togglePlayPause();
+      } else {
+        saveRecentSearch(query.trim());
+        setQueue(results);
+        setCurrentIndex(index);
+        loadAndPlay();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [results, query, setQueue, setCurrentIndex],
+  );
+
   const renderRecentSearches = () => {
     if (hasSearched || recentSearches.length === 0) return null;
     return (
@@ -161,6 +178,9 @@ export default function SearchScreen() {
     ({ item, index }: { item: Song; index: number }) => {
       const imageUrl = getImageUrl(item.image, '150x150');
       const artistName = getArtistName(item);
+      const { queue, currentIndex, isPlaying } = usePlayerStore.getState();
+      const isCurrentSong = queue[currentIndex]?.id === item.id;
+      const isCurrentPlaying = isCurrentSong && isPlaying;
 
       return (
         <TouchableOpacity
@@ -176,7 +196,7 @@ export default function SearchScreen() {
             </View>
           )}
           <View className="flex-1 ml-3.5">
-            <Text className="text-[15px] font-semibold mb-0.5" style={{ color: colors.text }} numberOfLines={1}>
+            <Text className="text-[15px] font-semibold mb-0.5" style={{ color: isCurrentSong ? colors.primary : colors.text }} numberOfLines={1}>
               {item.name}
             </Text>
             <Text className="text-[13px]" style={{ color: colors.textSecondary }} numberOfLines={1}>
@@ -186,8 +206,9 @@ export default function SearchScreen() {
           <TouchableOpacity
             className="w-[34px] h-[34px] rounded-[17px] border-2 justify-center items-center ml-2"
             style={{ borderColor: colors.primary }}
+            onPress={() => handlePlayPausePress(item, index)}
           >
-            <Ionicons name="play" size={16} color={colors.primary} />
+            <Ionicons name={isCurrentPlaying ? 'pause' : 'play'} size={16} color={colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity className="p-2 ml-0.5">
             <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
@@ -195,7 +216,7 @@ export default function SearchScreen() {
         </TouchableOpacity>
       );
     },
-    [handleSongPress, colors],
+    [handleSongPress, handlePlayPausePress, colors],
   );
 
   const renderFilterChips = () => (

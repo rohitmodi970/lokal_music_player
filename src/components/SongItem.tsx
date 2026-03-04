@@ -7,6 +7,7 @@ import {
     View,
 } from 'react-native';
 
+import usePlayerStore from '../store/usePlayerStore';
 import useThemeStore from '../store/useThemeStore';
 import { Song } from '../types';
 import { getArtistName, getImageUrl } from '../utils/helpers';
@@ -27,6 +28,7 @@ export default function SongItem({
   onOptionsPress,
 }: SongItemProps) {
   const { colors } = useThemeStore();
+  const { isPlaying } = usePlayerStore();
   const imageUrl = getImageUrl(song.image, '150x150');
   const artistName = getArtistName(song);
   const dur =
@@ -36,6 +38,7 @@ export default function SongItem({
   const minutes = Math.floor(dur / 60);
   const seconds = dur % 60;
   const durationStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} mins`;
+  const isCurrentlyPlaying = isActive && isPlaying;
 
   return (
     <TouchableOpacity
@@ -69,7 +72,7 @@ export default function SongItem({
         style={{ borderColor: colors.primary }}
         onPress={() => onPress(song, index)}
       >
-        <Ionicons name="play" size={16} color={colors.primary} />
+        <Ionicons name={isCurrentlyPlaying ? 'pause' : 'play'} size={16} color={colors.primary} />
       </TouchableOpacity>
 
       <TouchableOpacity

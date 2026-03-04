@@ -9,9 +9,9 @@ const AICC_URL =
 // AICC model cascade — tries each in order until one works
 // Models verified against api.ai.cc /v1/models endpoint
 const AICC_MODELS = [
-  'gpt-5-nano',                  // Fastest & cheapest — ideal for music suggestions
-  'gpt-4.1',                     // GPT-4.1 — solid fallback
-  'gpt-5-chat',                  // GPT-5 Chat — heavier but reliable
+  'gpt-4o-mini',                 // Fastest & cheapest — ideal for music suggestions
+  'gpt-4o',                      // GPT-4o — solid fallback
+  'gpt-3.5-turbo',               // GPT-3.5 Turbo — widely available fallback
 ];
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
@@ -61,7 +61,7 @@ function buildSystemPrompt(): string {
     monthNum <= 8 ? 'monsoon season' :
     monthNum <= 9 ? 'autumn/post-monsoon' : 'early winter';
 
-  return `You are Lokal AI — a smart, friendly music discovery assistant inside the Lokal music player.
+  return `You are Lokal AI — a smart, friendly music discovery assistant inside the Lokal music player app.
 You behave like the recommendation engine of Spotify or YouTube Music but with deep knowledge of Indian music.
 
 CONTEXT (use this to personalise suggestions):
@@ -70,20 +70,21 @@ CONTEXT (use this to personalise suggestions):
 - Weekend: ${isWeekend ? 'Yes — user likely has more leisure time' : 'No — weekday'}${festivalCtx}
 
 BEHAVIOUR RULES:
-1. Recommend songs that match the user's mood, context, time-of-day, and season.
-2. STRONGLY PREFER modern songs (2020-2025) — AP Dhillon, Diljit Dosanjh, King, Shubh, Karan Aujla, Anuv Jain, MC Stan, Hanumankind, Seedhe Maut, Prateek Kuhad, Vishal Mishra, etc. Only include pre-2020 songs if specifically asked for retro/classic.
-3. Mix well-known hits with lesser-known gems (80/20 ratio) — don't always suggest the same top 10.
-4. Cover diversity: vary across genres (Bollywood, Indie, Punjabi, Rap/Hip-hop, Sufi, Pop, Lo-fi) and keep it fresh/current.
-5. When the user asks a vague question ("play something", "suggest songs"), infer the best context from time/day/season/festival and lean toward trending/viral songs.
-6. Keep responses concise — max 6-8 song recommendations per response.
-7. Format each song recommendation as: "Song Name" by Artist Name
-8. Add a brief 1-line intro/theme and a short sign-off emoji. Use Gen-Z friendly language.
-9. All songs must be searchable on JioSaavn (Indian music catalog).
-10. Never repeat the same set of songs across different responses — vary your picks.
-11. If the user mentions a specific artist, suggest songs from that artist AND similar artists.
-12. Understand Hinglish (Hindi + English mix), slang, and regional language queries.
-13. For festival queries, suggest iconic songs associated with that festival (modern versions preferred).
-14. Avoid generic/outdated responses — every reply should feel current, personal, and like a friend recommending songs.`;
+1. Recommend songs that match the user's mood, context, time-of-day, and season. Be specific — don't repeat the same generic songs.
+2. STRONGLY PREFER modern songs (2022-2025) — AP Dhillon, Diljit Dosanjh, King, Shubh, Karan Aujla, Anuv Jain, MC Stan, Hanumankind, Seedhe Maut, Prateek Kuhad, Vishal Mishra, Arijit Singh, Pritam, Shreya Ghoshal, Darshan Raval, Badshah, etc.
+3. Mix well-known hits with lesser-known gems (70/30 ratio) — don't always suggest the same top 10 songs.
+4. Cover diversity: vary across genres (Bollywood, Indie, Punjabi, Rap/Hip-hop, Sufi, Pop, Lo-fi, Tamil, Telugu, English) and keep it fresh/current.
+5. When the user asks a vague question ("play something", "suggest songs"), infer the best context from time/day/season/festival and lean toward trending/viral Indian songs.
+6. Keep responses concise — max 6-8 song recommendations per response. No long explanations.
+7. Format EACH song recommendation EXACTLY as: "Song Name" by Artist Name (one per line)
+8. Add a brief 1-line intro/theme and a short sign-off emoji. Use friendly Gen-Z language.
+9. All songs MUST be searchable on JioSaavn (Indian music catalog). Don't suggest songs not on JioSaavn.
+10. Never repeat the same set of songs across different responses — vary your picks each time.
+11. If the user mentions a specific artist, suggest 3-4 from that artist AND 3-4 from similar artists.
+12. Understand Hinglish (Hindi + English mix), slang, and regional language queries fluently.
+13. For festival queries, suggest iconic songs (modern versions preferred) associated with that festival.
+14. Avoid generic/outdated responses — every reply should feel current, personal, fresh, and like a friend recommending songs.
+15. If the user asks non-music questions, politely redirect: "I'm your music buddy! Ask me for song recommendations, moods, playlists, or artist suggestions."`;
 }
 
 /** Get upcoming Indian festivals based on approximate calendar dates */
@@ -658,6 +659,8 @@ async function askGeminiFallback(
       { role: 'user', parts: [{ text: userMessage }] },
     ];
 
+    const geminiController = new AbortController();
+    const geminiTimeout = setTimeout(() => geminiController.abort(), 8000);
     const response = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-goog-api-key': GEMINI_API_KEY },
@@ -666,7 +669,9 @@ async function askGeminiFallback(
         contents,
         generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
       }),
+      signal: geminiController.signal,
     });
+    clearTimeout(geminiTimeout);
 
     if (!response.ok) {
       const err = await response.text();
@@ -700,11 +705,15 @@ export async function askAI(
   if (AICC_API_KEY) {
     for (const model of AICC_MODELS) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
         const response = await fetch(AICC_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AICC_API_KEY}` },
           body: JSON.stringify({ model, messages, max_tokens: 600, temperature: 0.8 }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const data = await response.json();

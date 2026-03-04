@@ -27,9 +27,9 @@ export default function QueueScreen() {
   const {
     queue,
     currentIndex,
-    setQueue,
     setCurrentIndex,
     removeFromQueue,
+    reorderQueue,
     clearQueue,
   } = usePlayerStore();
 
@@ -37,16 +37,10 @@ export default function QueueScreen() {
 
   const handleDragEnd = useCallback(
     ({ data, from, to }: { data: Song[]; from: number; to: number }) => {
-      setQueue(data);
-      if (from === currentIndex) {
-        setCurrentIndex(to);
-      } else if (from < currentIndex && to >= currentIndex) {
-        setCurrentIndex(currentIndex - 1);
-      } else if (from > currentIndex && to <= currentIndex) {
-        setCurrentIndex(currentIndex + 1);
-      }
+      // Use reorderQueue for atomic update — avoids triggering a reload
+      reorderQueue(from, to);
     },
-    [currentIndex, setQueue, setCurrentIndex],
+    [reorderQueue],
   );
 
   const handleRemoveSong = useCallback(

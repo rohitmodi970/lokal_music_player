@@ -4,8 +4,10 @@ import useLibraryStore from '../store/useLibraryStore';
 import usePlayerStore, { getCurrentSong } from '../store/usePlayerStore';
 import { getDownloadUrl } from '../utils/helpers';
 import {
+    cancelListeningReminder,
     dismissPlaybackNotification,
     showPlaybackNotification,
+    startListeningReminder,
 } from '../utils/notificationManager';
 
 let sound: Audio.Sound | null = null;
@@ -113,6 +115,8 @@ export async function loadAndPlay(): Promise<void> {
     useLibraryStore.getState().addToHistory(song);
     // Show playback notification with current song
     showPlaybackNotification(song, true).catch(() => {});
+    // Start listening reminder (resets if already running)
+    startListeningReminder();
   } catch (e) {
     console.error('loadAndPlay error:', e);
     store.setIsLoading(false);
@@ -185,6 +189,7 @@ export async function stopAndUnload(): Promise<void> {
   store.setPosition(0);
   store.setDuration(0);
   dismissPlaybackNotification().catch(() => {});
+  cancelListeningReminder();
 }
 
 /**
@@ -192,22 +197,34 @@ export async function stopAndUnload(): Promise<void> {
  */
 let previousIndex = -1;
 let previousQueueLength = 0;
+let previousQueueId = ''; // Track queue identity to detect real changes vs reorders
 
 export function startStoreSubscription(): void {
   usePlayerStore.subscribe((state) => {
     const { currentIndex, queue } = state;
+    // Build a lightweight queue identity: current song ID at currentIndex
+    const currentSongId = currentIndex >= 0 && currentIndex < queue.length
+      ? queue[currentIndex]?.id ?? ''
+      : '';
+    const queueId = `${currentSongId}_${currentIndex}`;
+
     if (
       currentIndex >= 0 &&
       queue.length > 0 &&
-      (currentIndex !== previousIndex || queue.length !== previousQueueLength)
+      currentIndex !== previousIndex
     ) {
-      if (currentIndex !== previousIndex) {
-        previousIndex = currentIndex;
-        previousQueueLength = queue.length;
+      // Only reload if the song at the index actually changed
+      const prevSongChanged = queueId !== previousQueueId;
+      previousIndex = currentIndex;
+      previousQueueLength = queue.length;
+      previousQueueId = queueId;
+      if (prevSongChanged) {
         loadAndPlay();
-      } else {
-        previousQueueLength = queue.length;
       }
+    } else {
+      previousIndex = currentIndex;
+      previousQueueLength = queue.length;
+      previousQueueId = queueId;
     }
   });
 }

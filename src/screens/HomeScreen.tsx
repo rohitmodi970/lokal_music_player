@@ -36,6 +36,25 @@ const CARD_WIDTH = (SCREEN_WIDTH - 60) / 2.4;
 const ARTIST_CARD_WIDTH = (SCREEN_WIDTH - 60) / 2.8;
 const MOOD_CHIP_COLORS = ['#E8364F', '#1DB954', '#8B5CF6', '#F97316', '#06B6D4', '#EC4899', '#EAB308', '#3B82F6'];
 
+// Curated playlist categories for the Suggested tab
+interface CuratedPlaylist {
+  title: string;
+  emoji: string;
+  query: string;
+  gradient: string;
+}
+
+const CURATED_PLAYLISTS: CuratedPlaylist[] = [
+  { title: 'Bollywood Hits', emoji: '🎬', query: 'bollywood hits 2024 2025', gradient: '#E8364F' },
+  { title: 'Hollywood Vibes', emoji: '🌟', query: 'hollywood popular english hits', gradient: '#3B82F6' },
+  { title: 'Punjabi Fire', emoji: '🔥', query: 'punjabi hits trending 2025', gradient: '#F97316' },
+  { title: 'Indie Chill', emoji: '🎸', query: 'indie hindi chill', gradient: '#8B5CF6' },
+  { title: 'Romantic Hits', emoji: '💕', query: 'romantic love songs hindi 2024', gradient: '#EC4899' },
+  { title: 'Rap & Hip-Hop', emoji: '🎤', query: 'indian rap hip hop 2025', gradient: '#06B6D4' },
+  { title: 'Retro Classics', emoji: '🕰️', query: 'bollywood retro classic 90s', gradient: '#EAB308' },
+  { title: 'Lofi & Chill', emoji: '☕', query: 'lofi chill hindi', gradient: '#1DB954' },
+];
+
 // Quick mood/genre chips for the Suggested tab
 const MOOD_CHIPS: { label: string; emoji: string; query: string }[] = [
   { label: 'Trending', emoji: '🔥', query: 'trending viral 2025' },
@@ -112,6 +131,11 @@ export default function HomeScreen() {
   const [moodSongs, setMoodSongs] = useState<Song[]>([]);
   const [activeMood, setActiveMood] = useState<string | null>(null);
   const [moodLoading, setMoodLoading] = useState(false);
+  // Curated playlist see-all
+  const [curatedSongs, setCuratedSongs] = useState<Song[]>([]);
+  const [curatedTitle, setCuratedTitle] = useState<string>('');
+  const [curatedLoading, setCuratedLoading] = useState(false);
+  const [showCuratedAll, setShowCuratedAll] = useState(false);
 
   const hasCurrentSong = queue.length > 0 && currentIndex >= 0;
 
@@ -273,6 +297,21 @@ export default function HomeScreen() {
       setMoodLoading(false);
     }
   }, [activeMood]);
+
+  // Handle curated playlist press
+  const handleCuratedPlaylist = useCallback(async (playlist: CuratedPlaylist) => {
+    setCuratedTitle(playlist.title);
+    setCuratedLoading(true);
+    setShowCuratedAll(true);
+    try {
+      const result = await searchSongs(playlist.query, 1, 40);
+      setCuratedSongs(result.songs);
+    } catch {
+      setCuratedSongs([]);
+    } finally {
+      setCuratedLoading(false);
+    }
+  }, []);
 
   const loadLocalSongs = useCallback(async () => {
     setLocalLoading(true);
@@ -541,6 +580,34 @@ export default function HomeScreen() {
         </>
       )}
 
+      {/* Curated Playlists Grid */}
+      <SectionHeader title="Browse Playlists" />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 10 }}>
+        {CURATED_PLAYLISTS.map((pl) => (
+          <TouchableOpacity
+            key={pl.title}
+            style={{
+              width: (SCREEN_WIDTH - 42) / 2,
+              height: 60,
+              borderRadius: 12,
+              overflow: 'hidden',
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: pl.gradient + '20',
+              paddingHorizontal: 12,
+            }}
+            onPress={() => handleCuratedPlaylist(pl)}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 24, marginRight: 8 }}>{pl.emoji}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, flex: 1 }} numberOfLines={1}>
+              {pl.title}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {/* Trending Now */}
       <SectionHeader title="Trending Now" onSeeAll={() => setActiveTab('Songs')} />
       {trendingLoading ? (
@@ -758,6 +825,7 @@ export default function HomeScreen() {
       const seconds = dur % 60;
       const durationStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} mins`;
       const isCurrentSong = queue[currentIndex]?.id === item.id;
+      const isCurrentPlaying = isCurrentSong && usePlayerStore.getState().isPlaying;
 
       return (
         <TouchableOpacity
@@ -789,7 +857,7 @@ export default function HomeScreen() {
             style={[styles.playBtn, { borderColor: colors.primary }]}
             onPress={() => handleSongPress(item, activeTab === 'Songs' ? sortedSongs : songs)}
           >
-            <Ionicons name="play" size={16} color={colors.primary} />
+            <Ionicons name={isCurrentPlaying ? 'pause' : 'play'} size={16} color={colors.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1211,6 +1279,88 @@ export default function HomeScreen() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Curated Playlist Full View */}
+      <Modal
+        visible={showCuratedAll}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCuratedAll(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
+              <TouchableOpacity onPress={() => setShowCuratedAll(false)} style={{ padding: 4 }}>
+                <Ionicons name="arrow-back" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <Text style={{ flex: 1, fontSize: 18, fontWeight: 'bold', color: colors.text, marginLeft: 12 }}>
+                {curatedTitle}
+              </Text>
+              {curatedSongs.length > 0 && (
+                <TouchableOpacity
+                  style={{ backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}
+                  onPress={() => {
+                    setQueue(curatedSongs);
+                    setCurrentIndex(0);
+                    loadAndPlay();
+                    setShowCuratedAll(false);
+                    navigation.navigate('Player');
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Play All</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {curatedLoading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={{ color: colors.textSecondary, marginTop: 12 }}>Loading songs...</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={curatedSongs}
+                keyExtractor={(item) => `curated-${item.id}`}
+                renderItem={({ item, index }) => {
+                  const imageUrl = getImageUrl(item.image, '150x150');
+                  const isCurrentSong = queue[currentIndex]?.id === item.id;
+                  const isCurrentPlaying = isCurrentSong && usePlayerStore.getState().isPlaying;
+                  return (
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+                      onPress={() => {
+                        setQueue(curatedSongs);
+                        setCurrentIndex(index);
+                        loadAndPlay();
+                        navigation.navigate('Player');
+                      }}
+                    >
+                      {imageUrl ? (
+                        <Image source={{ uri: imageUrl }} style={{ width: 50, height: 50, borderRadius: 8 }} />
+                      ) : (
+                        <View style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="musical-note" size={20} color={colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={{ fontWeight: '600', color: isCurrentSong ? colors.primary : colors.text, fontSize: 14 }} numberOfLines={1}>{item.name}</Text>
+                        <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>{getArtistName(item)}</Text>
+                      </View>
+                      {isCurrentSong && (
+                        <Ionicons name={isCurrentPlaying ? 'pause' : 'play'} size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                      )}
+                      <TouchableOpacity onPress={() => setOptionsSong(item)} style={{ padding: 8 }}>
+                        <Ionicons name="ellipsis-vertical" size={16} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  );
+                }}
+                contentContainerStyle={{ paddingBottom: 30 }}
+              />
+            )}
+          </SafeAreaView>
+        </View>
       </Modal>
 
       {/* Song Options Bottom Sheet */}
