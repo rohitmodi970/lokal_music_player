@@ -119,6 +119,7 @@ export default function HomeScreen() {
     loadInitialSongs();
     loadTrendingSongs();
     loadTopArtists();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadInitialSongs = async (showSpinner = true) => {
